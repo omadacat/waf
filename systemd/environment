@@ -1,0 +1,12 @@
+# GoWAF environment file
+# Install to: /etc/waf/environment
+# Permissions: chmod 600 /etc/waf/environment
+#              chown waf:waf /etc/waf/environment
+
+# Token signing secret
+# MUST be changed before deployment.
+# Generate a new secret: openssl rand -hex 32
+WAF_TOKEN_SECRET=CHANGE_ME_RUN_openssl_rand_hex_32
+
+# Override listen address if needed
+# WAF_LISTEN_ADDR=127.0.0.1:7616

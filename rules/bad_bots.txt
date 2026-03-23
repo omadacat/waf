@@ -1,0 +1,62 @@
+# Bad Bot User-Agent Patterns
+# These supplement the built-in patterns in antibot.go.
+
+# AI Scrapers
+(?i)GPTBot
+(?i)ChatGPT-User
+(?i)CCBot
+(?i)anthropic-ai
+(?i)ClaudeBot
+(?i)cohere-ai
+(?i)PerplexityBot
+(?i)YouBot
+(?i)Bytespider
+(?i)Amazonbot
+(?i)Applebot-Extended
+(?i)DataForSeoBot
+(?i)ImagesiftBot
+(?i)OmgiliBot
+(?i)FacebookBot
+(?i)Diffbot
+(?i)Timpibot
+(?i)VelenPublicWebCrawler
+
+# SEO / Link Analysis Bots 
+(?i)AhrefsBot
+(?i)MJ12bot
+(?i)DotBot
+(?i)SemrushBot
+(?i)BLEXBot
+(?i)PetalBot
+(?i)BingPreview
+(?i)Sogou
+(?i)YandexBot
+(?i)BaiduSpider
+(?i)360Spider
+
+# Generic Scrapers / Libraries 
+(?i)^python-requests
+(?i)^python-urllib
+(?i)^go-http-client
+(?i)^Java\/
+(?i)^okhttp
+(?i)^Apache-HttpClient
+(?i)^libwww-perl
+(?i)^lwp-trivial
+(?i)^curl\/
+(?i)^wget\/
+(?i)^Scrapy
+(?i)^mechanize
+(?i)^aiohttp
+(?i)^httpx
+(?i)HeadlessChrome
+(?i)PhantomJS
+
+# Security Scanners 
+(?i)nikto
+(?i)sqlmap
+(?i)masscan
+(?i)nuclei
+(?i)dirbuster
+(?i)gobuster
+(?i)wfuzz

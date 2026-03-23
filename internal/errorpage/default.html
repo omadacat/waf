@@ -1,0 +1,203 @@
+<!doctype html>
+<html $if(lang)$lang="$lang$" xml:lang="$lang$" $endif$>
+	<!--
+	/**
+	 * Copyright Notice:
+	 * Source code is licensed under GPLv2+ (unless otherwise stated)
+	 * Content is licensed under CC BY-SA 4.0 (unless otherwise stated)
+	 * 
+	 * @license {@link https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html}
+	 * @license {@link https://creativecommons.org/licenses/by-sa/4.0/}
+	 */
+	-->
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+		<meta name="theme-color" content="#328c60" />
+		<link rel="sourcecode" href="https://git.omada.cafe/atf/waf" />
+		<link rel="copyright" href="https://creativecommons.org/licenses/by-sa/4.0/" />
+		<link rel="license" href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html" />
+		<link rel="icon" href="/favicon.ico" />
+		<title>HTTP $ERROR_CODE</title>
+		<style>
+			* {
+				margin: 0;
+				padding: 0;
+			}
+
+			html {
+				width: 100%;
+				background: #fff;
+				color: #000;
+				font-family: "Noto Serif", "Source Serif", "Noto Serif SC", Times New Roman, Times, serif;
+				line-height: 1.75;
+			}
+
+			body,
+			html {
+				min-height: 100vh;
+			}
+
+			body {
+				display: flex;
+				margin: 0 auto;
+				max-width: 83vw;
+				flex-wrap: wrap;
+				flex-direction: column;
+				justify-content: space-between;
+			}
+
+			header {
+				margin: 10vh 0 0;
+				padding-bottom: 1em;
+				border-bottom: 5px solid #328c60;
+			}
+
+			header a {
+				font-size: 1.5em;
+				font-weight: bold;
+				color: #000;
+			}
+
+			header a:hover {
+				text-decoration: none;
+			}
+
+			a img {
+				border: 0;
+				vertical-align: text-bottom;
+				margin: 0 5px;
+			}
+
+			main {
+				display: flex;
+				margin: 1em auto;
+				min-width: 70vw;
+				flex-wrap: wrap;
+				flex-direction: column;
+				padding: 1em;
+			}
+
+			h1 {
+				line-height: 1.5;
+				font-size: 1.625em;
+				margin-top: 1em;
+				margin-bottom: 0.5em;
+			}
+
+			p {
+				margin: 0.5em 0;
+			}
+
+			a {
+				color: #36c;
+				text-decoration: none;
+			}
+
+			a:hover {
+				text-decoration: underline;
+			}
+
+			em,
+			footer {
+				color: #777;
+				font-style: normal;
+			}
+
+			footer {
+				margin: 0 0 10vh;
+				padding-top: 1em;
+				border-top: 1px solid #eaecf0;
+				font-size: 0.9em;
+			}
+
+			.footer-links a {
+				margin-right: 0.5em;
+				white-space: nowrap;
+			}
+
+			footer .footer-buttons {
+				display: flex;
+				margin-top: 0.5em;
+				gap: 0.5em;
+				flex-wrap: wrap;
+				flex-direction: row;
+				justify-content: flex-end;
+			}
+
+			@media (max-width: 768px) {
+				main {
+					padding: 1.5rem;
+					margin-top: 1rem;
+					margin-bottom: 1rem;
+				}
+				main h1 {
+					font-size: 1.8rem;
+				}
+			}
+
+			@media (prefers-color-scheme: dark) {
+				html {
+					background: #121212;
+					color: #e0e0e0;
+				}
+				header {
+					border-bottom-color: #2d7353;
+				}
+				header a {
+					color: #e0e0e0;
+				}
+				main {
+					background: #1e1e1e;
+					box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+				}
+				main h1 {
+					color: #6bc29a;
+					border-bottom-color: #2d3833;
+				}
+				main h1 em {
+					color: #8fd4b0;
+				}
+				main p {
+					color: #cccccc;
+				}
+				main b {
+					color: #8fd4b0;
+					background: #2d3833;
+				}
+				a {
+					color: #66b3ff;
+				}
+				main a {
+					border-bottom-color: rgba(102, 179, 255, 0.3);
+				}
+				a:hover {
+					color: #6bc29a;
+				}
+				em, footer {
+					color: #aaa;
+				}
+				footer {
+					border-top-color: #333;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header>
+    <a href="/" title="Home">WAF</a>
+</header>
+		<main>
+			<h1>
+				Error Code Descriptions<em> (HTTP $(error-code))</em>
+			</h1>
+			$body$
+		</main>
+		<footer>
+    <div class="footer-copyright">
+        <p>Protected by <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a></p>
+        <p>Content licensed under <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="noopener noreferrer" target="_blank">CC BY-SA 4.0</a></p>
+    </div>
+</footer>
+	</body>
+</html>

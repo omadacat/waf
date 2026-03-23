@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <link rel="sourcecode" href="https://git.omada.cafe/atf/waf" rel="noopener" />
+    <link rel="copyright" href="https://creativecommons.org/licenses/by-sa/4.0/" />
+    <link rel="license" href="https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html" />
+    <link rel="icon" href="/favicon.ico" />
+    <title>HTTP 429</title>
+    <style>
+*{margin:0;padding:0}
+html{width:100%;background:#fff;color:#000;font-family:"Noto Serif","Source Serif","Noto Serif SC","Source Han Serif SC",Times New Roman,Times,STSong,SimSun,serif;line-height:1.75}
+body,html{min-height:100vh}
+body{display:flex;margin:0 auto;max-width:83vw;flex-wrap:wrap;flex-direction:column;justify-content:space-between}
+header{margin:10vh 0 0;padding-bottom:1em;border-bottom:5px solid #328c60}
+a img{border:0}
+main {
+    background: #f8faf9; 
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(50, 140, 96, 0.1);
+    padding: 2.5rem;
+    margin-top: 2rem;
+    margin-bottom: 2rem;
+}
+
+main h1 {
+    font-size: 2.2rem;
+    color: #2d7353; 
+    line-height: 1.3;
+    border-bottom: 2px solid #e0efe8; 
+    padding-bottom: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+main h1 em {
+    color: #4a9b78; 
+    font-size: 1.1rem;
+}
+
+main p {
+    margin: 1.2rem 0;
+    color: #3a3a3a; 
+    line-height: 1.8;
+}
+
+main b {
+    color: #328c60; 
+    padding: 0.2rem 0.4rem;
+    background: #e8f5f0; 
+    border-radius: 4px;
+}
+
+a {
+    transition: all 0.2s ease;
+    color:#36c;text-decoration:none;
+}
+
+main a{border-bottom: 1px dashed rgba(54, 204, 204, 0.3); }
+
+a:hover {
+    color: #2a8a5c;
+    text-decoration: none;
+    border-bottom-style: solid;
+}
+em,footer{color:#777;font-style:normal}
+footer{margin:0 0 10vh;padding-top:1em;border-top:1px solid #eaecf0;font-size:.9em}
+.footer-links a{margin-right:.5em;white-space:nowrap}
+footer .footer-buttons{display:flex;margin-top:.5em;gap:.5em;flex-wrap:wrap;flex-direction:row;justify-content:flex-end}
+
+@media (max-width: 768px) {
+    main {
+        padding: 1.5rem;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+    }
+    main h1 {
+        font-size: 1.8rem;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    html {
+        background: #121212;
+        color: #e0e0e0;
+    }
+    header {
+        border-bottom-color: #2d7353;
+    }
+    main {
+        background: #1e1e1e;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    }
+    main h1 {
+        color: #6bc29a;
+        border-bottom-color: #2d3833;
+    }
+    main h1 em {
+        color: #8fd4b0;
+    }
+    main p {
+        color: #cccccc;
+    }
+    main b {
+        color: #8fd4b0;
+        background: #2d3833;
+    }
+    a {
+        color: #66b3ff;
+    }
+    main a {
+        border-bottom-color: rgba(102, 179, 255, 0.3);
+    }
+    a:hover {
+        color: #6bc29a;
+    }
+    em, footer {
+        color: #aaa;
+    }
+    footer {
+        border-top-color: #333;
+    }
+
+    footer .footer-buttons img[src*="cc-by-sa"] {
+        filter: brightness(0) invert(1);
+    }
+    footer .footer-buttons img[src*="WAF"] {
+        filter: invert(1) hue-rotate(180deg);
+    }
+}
+    </style>
+</head>
+<header>
+    <a href="/" title="Home">WAF</a>
+</header>
+<main>
+    <h1>
+        Too Many Requests<em>（HTTP 429）</em>
+    </h1>
+    <p>
+        >Sorry, you have sent too many requests in a given amount of time.
+    </p>
+    <p>
+        Please wait and <a href="javascript:window.location.reload();">try again later</a> or return to the <a href="/">home page</a>.
+    </p>
+</main>
+<footer>
+    <div class="footer-copyright">
+        <p>Protected by <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a></p>
+        <p>Content licensed under <a href="https://creativecommons.org/licenses/by-sa/4.0/" rel="noopener noreferrer" target="_blank">CC BY-SA 4.0</a></p>
+    </div>
+</footer>
+
+
+
+</html>
