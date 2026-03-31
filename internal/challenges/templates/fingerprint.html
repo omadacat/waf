@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Checking your browser…</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html{width:100%;background:#fff;color:#000;font-family:"Noto Serif","Source Serif",Times New Roman,serif;line-height:1.75}
+html,body{min-height:100vh}
+body{display:flex;margin:0 auto;max-width:83vw;flex-wrap:wrap;flex-direction:column;justify-content:space-between}
+header{margin:10vh 0 0;padding-bottom:1em;border-bottom:5px solid #328c60}
+header a{font-size:1.5em;font-weight:bold;color:#000;text-decoration:none}
+main{display:flex;margin:1em auto;min-width:70vw;flex-wrap:wrap;flex-direction:column;padding:1em}
+h1{line-height:1.5;font-size:1.625em;margin-top:1em;margin-bottom:.5em}
+p{margin:.5em 0}
+a{color:#36c}
+em,footer{color:#777;font-style:normal}
+footer{margin:0 0 10vh;padding-top:1em;border-top:1px solid #eaecf0;font-size:.9em}
+.spin{display:inline-block;width:40px;height:40px;border:4px solid #eee;border-top-color:#328c60;border-radius:50%;animation:sp .8s linear infinite;margin:1em 0}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media(prefers-color-scheme:dark){html{background:#121212;color:#e0e0e0}header{border-bottom-color:#2d7353}header a{color:#e0e0e0}footer{border-top-color:#333;color:#aaa}}
+</style>
+</head>
+<body>
+<header><a href="/">Checking your browser</a></header>
+<main>
+  <div class="spin" id="spin"></div>
+  <h1>Just a moment…</h1>
+  <p>Verifying your browser environment. This completes automatically.</p>
+</main>
+<footer><p>Protected by <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a></p></footer>
+<script>
+"use strict";
+(function() {
+  var BASE_PATH = "{{.BasePath}}";
+  var NONCE = "{{.Nonce}}";
+  var REDIRECT = "{{.Redirect}}";
+
+  var fp = {
+    ua: navigator.userAgent || "",
+    platform: navigator.platform || "",
+    languages: Array.from(navigator.languages || []),
+    screen: screen.width + "x" + screen.height,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+    plugins: [],
+    canvas: "",
+    webgl: "",
+    fonts: [],
+    touch: navigator.maxTouchPoints > 0,
+    dnt: navigator.doNotTrack === "1",
+    headers: {},
+    mouse: [],
+    keys: [],
+    timing: {
+      navigationStart: performance.timing ? performance.timing.navigationStart : 0,
+      loadEventEnd: performance.timing ? performance.timing.loadEventEnd : 0
+    }
+  };
+
+  // Collect plugins
+  for (var i = 0; i < (navigator.plugins || []).length; i++) {
+    fp.plugins.push(navigator.plugins[i].name);
+  }
+
+  // Canvas fingerprint (privacy-respecting: hash only)
+  try {
+    var c = document.createElement("canvas");
+    c.width = 200; c.height = 50;
+    var ctx = c.getContext("2d");
+    ctx.textBaseline = "top";
+    ctx.font = "14px Arial";
+    ctx.fillText("WAF fingerprint", 2, 2);
+    fp.canvas = c.toDataURL().slice(-32);
+  } catch(e) {}
+
+  // Mouse movement sampling (first 10 events only)
+  var t0 = Date.now();
+  document.addEventListener("mousemove", function(e) {
+    if (fp.mouse.length < 10) {
+      fp.mouse.push({x: e.clientX, y: e.clientY, t: Date.now() - t0});
+    }
+  }, {passive: true});
+
+  // Submit after 1.5s
+  setTimeout(function() {
+    fetch(BASE_PATH + "/verify-fingerprint", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(fp)
+    }).then(function(r) {
+      if (r.ok) {
+        window.location.href = REDIRECT;
+      } else {
+        window.location.href = BASE_PATH + "/js?redirect=" + encodeURIComponent(REDIRECT);
+      }
+    }).catch(function() {
+      window.location.href = BASE_PATH + "/js?redirect=" + encodeURIComponent(REDIRECT);
+    });
+  }, 1500);
+})();
+</script>
+</body>
+</html>

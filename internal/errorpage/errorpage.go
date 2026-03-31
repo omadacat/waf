@@ -1,3 +1,5 @@
+package errorpage
+
 // Package errorpage serves pre-built HTML error pages for block responses.
 //
 // Pages are embedded directly into the binary at compile time using go:embed, so no external files are needed at runtime.
@@ -7,7 +9,6 @@
 //	errorpage.Write(w, http.StatusForbidden)
 //	errorpage.Write(w, http.StatusTooManyRequests)
 //	errorpage.Write(w, http.StatusBadGateway)
-package errorpage
 
 import (
 	_ "embed"

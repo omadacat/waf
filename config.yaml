@@ -1,89 +1,68 @@
-# ============================================================
-# Env overrides: WAF_LISTEN_ADDR, WAF_TOKEN_SECRET
-# ============================================================
-
 listen_addr: "127.0.0.1:7616"
-
-# =============
-# |  REQUIRED  |
-# =============
-# generate with: openssl rand -hex 32
-# Best practice: set via WAF_TOKEN_SECRET environment variable.
-token_secret: "CHANGE_ME_USE_ENV_VAR_WAF_TOKEN_SECRET"
-
-# Session token lifetime. Renewed on every valid request (sliding expiry).
+token_secret: "CHANGE_ME_USE_WAF_TOKEN_SECRET_ENV_VAR_OR_openssl rand -hex 32"
 token_ttl: "1h"
-
-# Backend routing (Host header -> backend URL)
 backends:
-  "example.tld":       "http://127.0.0.1:8080"
-
-# Rate limiting 
+  "example.com": "http://127.0.0.1:8080"
 rate_limit:
   enabled: true
   window_seconds: 60
   max_requests: 100
   blacklist_duration: "1h"
-
 antibot:
   enabled: true
   block_empty_user_agent: true
   block_empty_accept: true
   bot_ua_list_file: "/etc/waf/bad_bots.txt"
-
 challenges:
   base_path: "/_waf"
   nonce_ttl: "5m"
-
-  # js_first | css_first | scrypt_for_datacenter
-  strategy: "js_first"
-
-  # JS PoW: 16 bits → ~65 536 iterations (~0.1 s in a modern browser).
-  js_difficulty: 16
-
-  # Scrypt PoW: used for datacenter IPs with scrypt_for_datacenter strategy.
+  strategy: "js_first" # js_first | css_first | scrypt_for_datacenter
+  js_difficulty: 16 # ~65k hashes ≈ 0.1s in a modern browser
   scrypt_difficulty: 20
-  scrypt_n: 32768   # N — memory cost = N * r * 128 bytes (4 MB here)
+  scrypt_n: 32768
   scrypt_r: 8
   scrypt_p: 1
   scrypt_key_len: 32
-
-  # CSS no-JS challenge: number of images in sequence (2–6).
   css_sequence_length: 3
-
-  # Paths that bypass all challenges.
   exempt_paths:
     - "/_waf/"
     - "/favicon.ico"
     - "/.well-known/"
   exempt_hosts: []
-
-  # lower difficulty for Tor exit nodes?
   tor_friendly: true
   tor_exit_list_url: "https://check.torproject.org/torbulkexitlist"
   tor_exit_refresh: "6h"
   tor_js_difficulty: 10
   tor_scrypt_difficulty: 14
-
+# Generate hashes with: htpasswd -nbB username password or in Go: bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+auth:
+  enabled: false
+  realm: "Restricted Area"
+  users:
+    # admin: "$2a$10$replaceWithRealBcryptHash"
+  paths:
+    # "/admin":   ["admin"]
+bans:
+  enabled: false
+  persist_file: "/var/lib/waf/bans.json"
+  fail2ban_log: "/var/log/waf/fail2ban.log"
+  default_ban_duration: "1h"
+  score_threshold: 50
 waf:
   enabled: true
   engine: "regex"
   regex:
-    # Falls back to built-in rules if file is missing.
     rules_file: "/etc/waf/waf_rules.yaml"
-  # Skip WAF body inspection for these hosts (media streaming).
-  # Rate limiting and challenge layers still apply.
+  log_blocks: true
+  # Skip WAF body inspection for media streaming (still rate-limited + antibot)
   skip_hosts:
-    - "your.domain.tld"
-
-# Logging
+    - "media.lvsci.net"
+    - "media.omada.cat"
 logging:
-  format: "json"         # json | text
-  level: "info"          # debug | info | warn | error
-  output: "-"            # "-" = stdout → systemd captures to journald
+  format: "json" # json | text
+  level: "info" # debug | info | warn | error
+  output: "-" # "-" = stdout → journald
   log_all_requests: false
-
-# Prometheus
 metrics:
-  enabled: false
+  enabled: true
   listen_addr: "127.0.0.1:9101"

@@ -1,15 +1,6 @@
 # Web Application Firewall
 
-As cybersecurity risks continue to rise, web application firewalls have become a fundamental component of website security. `waf` is a self‑contained, lightweight Web Application Firewall written in Go. It sits behind your existing Nginx reverse proxy and provides a layered defense against malicious bots, AI scrapers, and common web attacks (XSS, SQL injection, path traversal). It combines techniques from several open‑source projects: 
-
-- [SafeLine WAF](https://github.com/chaitin/safeline)
-- [csswaf](https://github.com/yzqzss/csswaf)
-- [ngx_http_js_challenge_module](https://github.com/solidwall/ngx_http_js_challenge_module)
-- [haproxy-protection](https://github.com/OpenNSM/haproxy-protection)
-- [pow-bot-deterrent](https://github.com/jwhett/pow-bot-deterrent)
-- [go-away](https://github.com/StalkR/go-away)
-- [anubis](https://github.com/jonaslu/anubis)
-- [powxy](https://github.com/landaire/powxy)
+As cybersecurity risks continue to rise, web application firewalls have become a fundamental component of website security. `waf` is a self‑contained, lightweight Web Application Firewall written in Go. It sits behind your existing Nginx reverse proxy and provides a layered defense against malicious bots, AI scrapers, and common web attacks (XSS, SQL injection, path traversal). It combines techniques from several open‑source projects: SafeLine WAF, csswaf, ngx_http_js_challenge_module, haproxy-protection, pow-bot-deterrent, go-away, anubis, and powxy
 
 ## Installation
 

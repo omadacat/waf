@@ -1,0 +1,3 @@
+- TLS fingerprinting (JA3)
+- IP reputation with crowdsec
+- maybe not hardcode html

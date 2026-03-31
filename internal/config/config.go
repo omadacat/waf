@@ -17,6 +17,8 @@ type Config struct {
 	RateLimit   RateLimitConfig   `yaml:"rate_limit"`
 	AntiBot     AntiBotConfig     `yaml:"antibot"`
 	Challenges  ChallengesConfig  `yaml:"challenges"`
+	Auth        AuthConfig        `yaml:"auth"`
+	Bans        BansConfig        `yaml:"bans"`
 	WAF         WAFConfig         `yaml:"waf"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	Metrics     MetricsConfig     `yaml:"metrics"`
@@ -54,6 +56,26 @@ type ChallengesConfig struct {
 	TorExitRefresh      Duration `yaml:"tor_exit_refresh"`
 	TorJSDifficulty     int      `yaml:"tor_js_difficulty"`
 	TorScryptDifficulty int      `yaml:"tor_scrypt_difficulty"`
+}
+
+// AuthConfig — HTTP Basic Auth for sensitive path prefixes.
+// Users stores bcrypt hashes (generate with: htpasswd -nbB user pass).
+// Paths maps path prefixes to lists of allowed usernames.
+// Use "*" as a username to allow any authenticated user.
+type AuthConfig struct {
+	Enabled bool                `yaml:"enabled"`
+	Realm   string              `yaml:"realm"`
+	Users   map[string]string   `yaml:"users"`  // username -> "$2a$..." bcrypt hash
+	Paths   map[string][]string `yaml:"paths"`  // "/servers" -> ["admin"]
+}
+
+// BansConfig — persistent ban storage and fail2ban integration.
+type BansConfig struct {
+	Enabled            bool     `yaml:"enabled"`
+	PersistFile        string   `yaml:"persist_file"`
+	Fail2banLog        string   `yaml:"fail2ban_log"`
+	DefaultDuration    Duration `yaml:"default_ban_duration"`
+	ScoreThreshold     int      `yaml:"score_threshold"`
 }
 
 type WAFConfig struct {
@@ -125,6 +147,13 @@ func (c *Config) validate() error {
 	}
 	if c.Challenges.CSSSequenceLength < 2 {
 		c.Challenges.CSSSequenceLength = 3
+	}
+	// Defaults for bans
+	if c.Bans.DefaultDuration.Duration == 0 {
+		c.Bans.DefaultDuration.Duration = 1 * time.Hour
+	}
+	if c.Bans.ScoreThreshold == 0 {
+		c.Bans.ScoreThreshold = 50
 	}
 	return nil
 }

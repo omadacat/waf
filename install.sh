@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# install.sh — Deploy GoWAF on Fedora. Run as root or with sudo.
+# install.sh. Run as root or with sudo.
 # Usage: sudo ./systemd/install.sh
 set -euo pipefail
 
 BINARY_SRC="./waf"
 BINARY_DST="/usr/local/bin/waf"
-CONFIG_DIR="/etc/gowaf"
-SERVICE_FILE="/etc/systemd/system/gowaf.service"
-WAF_USER="gowaf"
+CONFIG_DIR="/etc/waf"
+SERVICE_FILE="/etc/systemd/system/waf.service"
+WAF_USER="waf"
 
 # 1. Build if needed
 if [[ ! -f "$BINARY_SRC" ]]; then
@@ -41,7 +41,7 @@ ENV_FILE="$CONFIG_DIR/environment"
 if [[ ! -f "$ENV_FILE" ]] || grep -q "CHANGE_ME" "$ENV_FILE"; then
   echo "==> Generating token secret…"
   SECRET=$(openssl rand -hex 32)
-  printf "GOWAF_TOKEN_SECRET=%s\n" "$SECRET" > "$ENV_FILE"
+  printf "WAF_TOKEN_SECRET=%s\n" "$SECRET" > "$ENV_FILE"
   chmod 600 "$ENV_FILE"
   echo "  wrote $ENV_FILE"
 fi
@@ -53,21 +53,21 @@ chmod 640 "$CONFIG_DIR"/*.yaml "$CONFIG_DIR"/*.txt 2>/dev/null || true
 chmod 600 "$ENV_FILE"
 
 # 7. Systemd
-cp systemd/gowaf.service "$SERVICE_FILE"
+cp systemd/waf.service "$SERVICE_FILE"
 systemctl daemon-reload
-systemctl enable gowaf
+systemctl enable waf
 
 # 8. Start / restart
-if systemctl is-active --quiet gowaf; then
-  systemctl restart gowaf
+if systemctl is-active --quiet waf; then
+  systemctl restart waf
 else
-  systemctl start gowaf
+  systemctl start waf
 fi
 sleep 1
-systemctl status gowaf --no-pager -l
+systemctl status waf --no-pager -l
 
 echo ""
-echo "==> GoWAF deployed."
+echo "==> WAF deployed."
 echo "    Logs:    journalctl -u gowaf -f"
 echo "    Config:  $CONFIG_DIR/config.yaml"
 echo "    Metrics: http://127.0.0.1:9101/metrics"

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"git.omada.cafe/atf/waf/internal/bans"
 	"git.omada.cafe/atf/waf/internal/challenges"
 	"git.omada.cafe/atf/waf/internal/config"
 	"git.omada.cafe/atf/waf/internal/logger"
@@ -39,6 +40,18 @@ func main() {
 	globalStore := store.New()
 	tokenMgr := token.New(cfg.TokenSecret, cfg.TokenTTL.Duration)
 
+	var banMgr *bans.BanManager
+	if cfg.Bans.Enabled {
+		banMgr = bans.NewBanManager(cfg.Bans.PersistFile, log)
+		if cfg.Bans.Fail2banLog != "" {
+			if err := banMgr.SetFail2banLog(cfg.Bans.Fail2banLog); err != nil {
+				log.Warn("bans: could not open fail2ban log", "err", err)
+			}
+		}
+		banMgr.StartCleanup()
+		log.Info("ban manager ready", "persist", cfg.Bans.PersistFile)
+	}
+
 	router, err := proxy.New(cfg.Backends, log)
 	if err != nil {
 		log.Error("failed to initialise proxy router", "err", err)
@@ -52,12 +65,20 @@ func main() {
 			log.Error("failed to initialise WAF engine", "err", err)
 			os.Exit(1)
 		}
-		inner = waf.NewMiddleware(engine, router, cfg, log)
+		wafMW := waf.NewMiddleware(engine, router, cfg, log)
+		if banMgr != nil {
+			wafMW.WithBanManager(banMgr, cfg.Bans.DefaultDuration.Duration)
+		}
+		inner = wafMW
+	}
+
+	if cfg.Auth.Enabled {
+		inner = middleware.NewBasicAuth(inner, cfg.Auth, log)
+		log.Info("basic auth enabled", "paths", len(cfg.Auth.Paths))
 	}
 
 	mux := http.NewServeMux()
 
-	// Build the challenge dispatcher using the new API
 	c := cfg.Challenges
 	dispatcher := challenges.NewDispatcher(
 		globalStore, tokenMgr,
@@ -72,7 +93,7 @@ func main() {
 	)
 	dispatcher.RegisterRoutes(mux)
 
-	// Exempt paths bypass Session + WAF
+	// Ensure challenge base path is exempt from session/WAF checks
 	base := strings.TrimRight(c.BasePath, "/")
 	if !cfg.IsExemptPath(base + "/") {
 		cfg.Challenges.ExemptPaths = append(cfg.Challenges.ExemptPaths, base+"/")
@@ -87,9 +108,10 @@ func main() {
 		cfg,
 		log,
 	)
-	antiBotMW := middleware.NoBot(sessionMW, cfg.AntiBot, log)
-	rateMW := middleware.NewRateLimit(antiBotMW, cfg.RateLimit, log)
-	metricsMW := middleware.NewMetrics(rateMW)
+	antiBotMW  := middleware.NoBot(sessionMW, cfg.AntiBot, log)
+	rateMW     := middleware.NewRateLimit(antiBotMW, cfg.RateLimit, banMgr, log)
+	normMW     := middleware.NewPathNormalizer(rateMW, base)
+	metricsMW  := middleware.NewMetrics(normMW)
 
 	if cfg.Metrics.Enabled {
 		metricsSrv := &http.Server{
@@ -106,6 +128,7 @@ func main() {
 		}()
 	}
 
+	// Main server
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           metricsMW,
@@ -130,7 +153,7 @@ func main() {
 	}()
 
 	<-stop
-	log.Info("shutdown signal — draining requests")
+	log.Info("shutdown signal :: draining requests")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {

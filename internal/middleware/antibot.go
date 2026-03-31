@@ -27,8 +27,6 @@ var builtinBadBotPatterns = []string{
 	`^\s*$`,
 }
 
-// AntiBot is the first filter layer. It blocks obvious bots by inspecting
-// headers before any challenge logic runs, saving compute.
 type AntiBot struct {
 	next     http.Handler
 	cfg      config.AntiBotConfig
@@ -36,8 +34,6 @@ type AntiBot struct {
 	log      *slog.Logger
 }
 
-// NoBot constructs the AntiBot middleware.
-// It compiles all UA patterns at startup so the hot path only does regexp matching, not compilation.
 func NoBot(next http.Handler, cfg config.AntiBotConfig, log *slog.Logger) *AntiBot {
 	g := &AntiBot{next: next, cfg: cfg, log: log}
 	g.patterns = compilePatterns(builtinBadBotPatterns)
@@ -130,3 +126,4 @@ func loadPatternFile(path string) ([]string, error) {
 }
 
 // Since we're behind Nginx, X-Forwarded-For is set by our own proxy and can be trusted for the first IP in the chain.
+// for better testing, we might want to expand this so it isn't dependent on Nginx

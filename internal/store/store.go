@@ -1,7 +1,8 @@
+package store
+
 // Package store provides an in-memory concurrent store with TTL expiration, used for nonces, CSS session state, rate-limit windows, and IP blacklists.
 // Use a simple sync.Map-backed store rather than a full cache library to keep dependencies minimal. A background goroutine sweeps expired entries every minute so memory doesn't grow unboundedly.
 // For multi-instance deployments, swap this out for a Redis-backed store using the same Store interface the rest of the codebase doesn't change.
-package store
 
 import (
 	"sync"
