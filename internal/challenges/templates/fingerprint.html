@@ -1,103 +1,133 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Checking your browser…</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="theme-color" content="#328c60">
+<link rel="icon" href="/favicon.ico">
+<title>Checking your browser — lvsci.net</title>
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-html{width:100%;background:#fff;color:#000;font-family:"Noto Serif","Source Serif",Times New Roman,serif;line-height:1.75}
-html,body{min-height:100vh}
+*{margin:0;padding:0}
+html{width:100%;background:#fff;color:#000;font-family:"Noto Serif","Source Serif",Times New Roman,Times,serif;line-height:1.75}
+body,html{min-height:100vh}
 body{display:flex;margin:0 auto;max-width:83vw;flex-wrap:wrap;flex-direction:column;justify-content:space-between}
 header{margin:10vh 0 0;padding-bottom:1em;border-bottom:5px solid #328c60}
 header a{font-size:1.5em;font-weight:bold;color:#000;text-decoration:none}
-main{display:flex;margin:1em auto;min-width:70vw;flex-wrap:wrap;flex-direction:column;padding:1em}
-h1{line-height:1.5;font-size:1.625em;margin-top:1em;margin-bottom:.5em}
-p{margin:.5em 0}
-a{color:#36c}
+header a:hover{text-decoration:none}
+main{background:#f8faf9;border-radius:8px;box-shadow:0 2px 8px rgba(50,140,96,.1);padding:2.5rem;margin-top:2rem;margin-bottom:2rem}
+main h1{font-size:2.2rem;color:#2d7353;line-height:1.3;border-bottom:2px solid #e0efe8;padding-bottom:1rem;margin-bottom:1.5rem}
+main h1 em{color:#4a9b78;font-size:1.1rem;font-style:normal}
+main p{margin:1.2rem 0;color:#3a3a3a;line-height:1.8}
+main b{color:#328c60;padding:.2rem .4rem;background:#e8f5f0;border-radius:4px}
+a{transition:all .2s ease;color:#36c;text-decoration:none}
+main a{border-bottom:1px dashed rgba(54,204,204,.3)}
+a:hover{color:#2a8a5c;text-decoration:none;border-bottom-style:solid}
 em,footer{color:#777;font-style:normal}
 footer{margin:0 0 10vh;padding-top:1em;border-top:1px solid #eaecf0;font-size:.9em}
-.spin{display:inline-block;width:40px;height:40px;border:4px solid #eee;border-top-color:#328c60;border-radius:50%;animation:sp .8s linear infinite;margin:1em 0}
+.footer-links a{margin-right:.5em;white-space:nowrap}
+@media(max-width:768px){main{padding:1.5rem;margin-top:1rem;margin-bottom:1rem}main h1{font-size:1.8rem}}
+@media(prefers-color-scheme:dark){html{background:#121212;color:#e0e0e0}header{border-bottom-color:#2d7353}header a{color:#e0e0e0}main{background:#1e1e1e;box-shadow:0 2px 8px rgba(0,0,0,.5)}main h1{color:#6bc29a;border-bottom-color:#2d3833}main h1 em{color:#8fd4b0}main p{color:#ccc}main b{color:#8fd4b0;background:#2d3833}a{color:#66b3ff}main a{border-bottom-color:rgba(102,179,255,.3)}a:hover{color:#6bc29a}em,footer{color:#aaa}footer{border-top-color:#333}}
+.spin{display:inline-block;width:36px;height:36px;border:4px solid #e0efe8;border-top-color:#328c60;border-radius:50%;animation:sp .8s linear infinite;margin-bottom:1.2rem}
 @keyframes sp{to{transform:rotate(360deg)}}
-@media(prefers-color-scheme:dark){html{background:#121212;color:#e0e0e0}header{border-bottom-color:#2d7353}header a{color:#e0e0e0}footer{border-top-color:#333;color:#aaa}}
+@media(prefers-color-scheme:dark){.spin{border-color:#2d3833;border-top-color:#6bc29a}}
 </style>
 </head>
 <body>
-<header><a href="/">Checking your browser</a></header>
+<header><a href="/">lvsci.net</a></header>
 <main>
-  <div class="spin" id="spin"></div>
-  <h1>Just a moment…</h1>
-  <p>Verifying your browser environment. This completes automatically.</p>
+    <div class="spin" id="spin"></div>
+    <h1>Just a moment… <em>(browser check)</em></h1>
+    <p>Verifying your browser environment. This completes automatically.</p>
 </main>
-<footer><p>Protected by <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a></p></footer>
+<footer>
+    <div class="footer-links">
+        <a href="/">Home</a>
+        <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a>
+    </div>
+</footer>
 <script>
 "use strict";
 (function() {
-  var BASE_PATH = "{{.BasePath}}";
-  var NONCE = "{{.Nonce}}";
-  var REDIRECT = "{{.Redirect}}";
+    var BASE_PATH = {{.BasePath}};
+    var NONCE     = {{.Nonce}};
+    var REDIRECT  = {{.Redirect}};
 
-  var fp = {
-    ua: navigator.userAgent || "",
-    platform: navigator.platform || "",
-    languages: Array.from(navigator.languages || []),
-    screen: screen.width + "x" + screen.height,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
-    plugins: [],
-    canvas: "",
-    webgl: "",
-    fonts: [],
-    touch: navigator.maxTouchPoints > 0,
-    dnt: navigator.doNotTrack === "1",
-    headers: {},
-    mouse: [],
-    keys: [],
-    timing: {
-      navigationStart: performance.timing ? performance.timing.navigationStart : 0,
-      loadEventEnd: performance.timing ? performance.timing.loadEventEnd : 0
+    var fp = {
+        ua: navigator.userAgent || "",
+        platform: navigator.platform || "",
+        languages: Array.from(navigator.languages || []),
+        screen: screen.width + "x" + screen.height,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "",
+        plugins: [],
+        canvas: "",
+        webgl: "",
+        fonts: [],
+        touch: navigator.maxTouchPoints > 0,
+        dnt: navigator.doNotTrack === "1",
+        headers: {},
+        mouse: [],
+        keys: [],
+        timing: {
+            navigationStart: performance.timing ? performance.timing.navigationStart : 0,
+            loadEventEnd:    performance.timing ? performance.timing.loadEventEnd    : 0
+        }
+    };
+
+    for (var i = 0; i < (navigator.plugins || []).length; i++) {
+        fp.plugins.push(navigator.plugins[i].name);
     }
-  };
 
-  // Collect plugins
-  for (var i = 0; i < (navigator.plugins || []).length; i++) {
-    fp.plugins.push(navigator.plugins[i].name);
-  }
+    try {
+        var c = document.createElement("canvas");
+        c.width = 200; c.height = 50;
+        var ctx = c.getContext("2d");
+        ctx.textBaseline = "top";
+        ctx.font = "14px Arial";
+        ctx.fillText("WAF fingerprint", 2, 2);
+        fp.canvas = c.toDataURL().slice(-32);
+    } catch(e) {}
 
-  // Canvas fingerprint (privacy-respecting: hash only)
-  try {
-    var c = document.createElement("canvas");
-    c.width = 200; c.height = 50;
-    var ctx = c.getContext("2d");
-    ctx.textBaseline = "top";
-    ctx.font = "14px Arial";
-    ctx.fillText("WAF fingerprint", 2, 2);
-    fp.canvas = c.toDataURL().slice(-32);
-  } catch(e) {}
+    try {
+        var gl = document.createElement("canvas").getContext("webgl") ||
+                 document.createElement("canvas").getContext("experimental-webgl");
+        if (gl) {
+            var dbg = gl.getExtension("WEBGL_debug_renderer_info");
+            fp.webgl = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "present";
+        }
+    } catch(e) {}
 
-  // Mouse movement sampling (first 10 events only)
-  var t0 = Date.now();
-  document.addEventListener("mousemove", function(e) {
-    if (fp.mouse.length < 10) {
-      fp.mouse.push({x: e.clientX, y: e.clientY, t: Date.now() - t0});
-    }
-  }, {passive: true});
+    try {
+        var testFonts = ["Arial","Verdana","Georgia","Times New Roman","Courier New","Impact","Comic Sans MS","Trebuchet MS","Arial Black","Palatino Linotype"];
+        var canvas2 = document.createElement("canvas");
+        var ctx2 = canvas2.getContext("2d");
+        testFonts.forEach(function(font) {
+            ctx2.font = "16px '" + font + "'";
+            ctx2.fillText("test", 0, 0);
+            if (ctx2.measureText("test").width > 0) fp.fonts.push(font);
+        });
+    } catch(e) {}
 
-  // Submit after 1.5s
-  setTimeout(function() {
-    fetch(BASE_PATH + "/verify-fingerprint", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify(fp)
-    }).then(function(r) {
-      if (r.ok) {
-        window.location.href = REDIRECT;
-      } else {
-        window.location.href = BASE_PATH + "/js?redirect=" + encodeURIComponent(REDIRECT);
-      }
-    }).catch(function() {
-      window.location.href = BASE_PATH + "/js?redirect=" + encodeURIComponent(REDIRECT);
-    });
-  }, 1500);
+    var t0 = Date.now();
+    document.addEventListener("mousemove", function(e) {
+        if (fp.mouse.length < 20) {
+            fp.mouse.push({x: e.clientX, y: e.clientY, t: Date.now() - t0});
+        }
+    }, {passive: true});
+    document.addEventListener("keydown", function() {
+        if (fp.keys.length < 10) fp.keys.push({t: Date.now() - t0});
+    }, {passive: true});
+
+    setTimeout(function() {
+        fetch(BASE_PATH + "/verify-fingerprint", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(fp)
+        }).then(function(r) {
+            window.location.href = r.ok ? REDIRECT : BASE_PATH + "/js?redirect=" + encodeURIComponent(REDIRECT);
+        }).catch(function() {
+            window.location.href = BASE_PATH + "/js?redirect=" + encodeURIComponent(REDIRECT);
+        });
+    }, 1500);
 })();
 </script>
 </body>

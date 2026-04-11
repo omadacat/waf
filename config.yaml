@@ -1,23 +1,62 @@
 listen_addr: "127.0.0.1:7616"
 token_secret: "CHANGE_ME_USE_WAF_TOKEN_SECRET_ENV_VAR_OR_openssl rand -hex 32"
-token_ttl: "1h"
+token_ttl: "30m"
 backends:
-  "example.com": "http://127.0.0.1:8080"
+  "lvsci.net": "http://127.0.0.1:8080"
+
+# TLS — leave blank when nginx terminates TLS upstream (the typical setup).
+# Fill in both paths to have the WAF terminate TLS directly; this also
+# enables native JA4 fingerprinting without requiring an nginx module.
+tls:
+  cert_file: ""
+  key_file:  ""
+
 rate_limit:
   enabled: true
   window_seconds: 60
-  max_requests: 100
-  blacklist_duration: "1h"
+  max_requests: 45          # 45 req/min is plenty for humans; slow scrapers trip this
+  blacklist_duration: "24h"
+
 antibot:
   enabled: true
   block_empty_user_agent: true
   block_empty_accept: true
   bot_ua_list_file: "/etc/waf/bad_bots.txt"
+
+# JA4 TLS fingerprint checking (config key kept as "ja3" for compatibility).
+# Two sources are checked in order:
+#   1. X-JA4-Hash header set by nginx (requires ngx_ssl_ja3 module):
+#        proxy_set_header X-JA4-Hash $ssl_ja3_hash;
+#   2. Native native tlsfp.Listener when tls.cert_file/key_file are set above.
+# Built-in blocklist (~25 hashes) is always active. Extend it here or
+# via blocklist_file.
+ja3:
+  enabled: true
+  blocklist_file: "/etc/waf/ja3_blocklist.txt"
+  # blocklist_hashes:
+  #   "aabbccddeeff00112233445566778899": "my-custom-scraper"
+  ban_duration: "24h"
+
+# Behaviour-based scraper detection — catches bots that already hold a
+# valid token. Tracks path uniqueness ratio, sequential ID enumeration,
+# missing Referer on HTML navigations, and metronomic inter-request timing.
+scraper:
+  enabled: true
+  window: "2m"
+  min_requests: 10
+  unique_path_ratio_soft: 0.75   # +25 score
+  unique_path_ratio_hard: 0.92   # +50 score
+  seq_run_length: 5              # +40 score — /item/41,42,43,44,45
+  metronome_jitter_ms: 50        # +30 score — stddev of gaps < 50 ms
+  challenge_threshold: 40
+  ban_threshold: 80
+  ban_duration: "24h"
+
 challenges:
   base_path: "/_waf"
   nonce_ttl: "5m"
-  strategy: "js_first" # js_first | css_first | scrypt_for_datacenter
-  js_difficulty: 16 # ~65k hashes ≈ 0.1s in a modern browser
+  strategy: "scrypt_for_datacenter"   # js_first | css_first | scrypt_for_datacenter
+  js_difficulty: 20                   # ~1 M hashes ≈ 0.5 s in a modern browser
   scrypt_difficulty: 20
   scrypt_n: 32768
   scrypt_r: 8
@@ -34,35 +73,40 @@ challenges:
   tor_exit_refresh: "6h"
   tor_js_difficulty: 10
   tor_scrypt_difficulty: 14
-# Generate hashes with: htpasswd -nbB username password or in Go: bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+  # template_dir: "/etc/waf/templates"   # uncomment to override embedded HTML
+
+# Generate hashes with: htpasswd -nbB username password
 auth:
   enabled: false
   realm: "Restricted Area"
   users:
     # admin: "$2a$10$replaceWithRealBcryptHash"
   paths:
-    # "/admin":   ["admin"]
+    # "/admin": ["admin"]
+
 bans:
-  enabled: false
+  enabled: true
   persist_file: "/var/lib/waf/bans.json"
   fail2ban_log: "/var/log/waf/fail2ban.log"
-  default_ban_duration: "1h"
+  default_ban_duration: "24h"
   score_threshold: 50
+
 waf:
   enabled: true
   engine: "regex"
   regex:
     rules_file: "/etc/waf/waf_rules.yaml"
   log_blocks: true
-  # Skip WAF body inspection for media streaming (still rate-limited + antibot)
   skip_hosts:
     - "media.lvsci.net"
     - "media.omada.cat"
+
 logging:
-  format: "json" # json | text
-  level: "info" # debug | info | warn | error
-  output: "-" # "-" = stdout → journald
+  format: "json"
+  level: "info"
+  output: "-"
   log_all_requests: false
+
 metrics:
   enabled: true
   listen_addr: "127.0.0.1:9101"

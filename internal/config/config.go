@@ -14,14 +14,51 @@ type Config struct {
 	TokenSecret string            `yaml:"token_secret"`
 	TokenTTL    Duration          `yaml:"token_ttl"`
 	Backends    map[string]string `yaml:"backends"`
+	TLS         TLSConfig         `yaml:"tls"`
 	RateLimit   RateLimitConfig   `yaml:"rate_limit"`
 	AntiBot     AntiBotConfig     `yaml:"antibot"`
+	JA3         JA3Config         `yaml:"ja3"`
+	Scraper     ScraperConfig     `yaml:"scraper"`
 	Challenges  ChallengesConfig  `yaml:"challenges"`
 	Auth        AuthConfig        `yaml:"auth"`
 	Bans        BansConfig        `yaml:"bans"`
 	WAF         WAFConfig         `yaml:"waf"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	Metrics     MetricsConfig     `yaml:"metrics"`
+}
+
+// TLSConfig enables native TLS termination at the WAF.
+// When both CertFile and KeyFile are set the WAF serves HTTPS directly and
+// the tlsfp.Listener can compute JA4 fingerprints from raw ClientHellos.
+// Leave empty when nginx (or another proxy) terminates TLS upstream.
+type TLSConfig struct {
+	CertFile string `yaml:"cert_file"`
+	KeyFile  string `yaml:"key_file"`
+}
+
+func (t TLSConfig) Enabled() bool { return t.CertFile != "" && t.KeyFile != "" }
+
+// JA3Config controls TLS ClientHello fingerprint checking.
+//
+// Two hash sources are supported (checked in order):
+//  1. X-JA4-Hash / X-JA4 header set by an upstream proxy (nginx, haproxy…).
+//  2. Native tlsfp.Listener when the WAF terminates TLS directly.
+//
+// Nginx setup (requires ngx_ssl_ja3 module or OpenResty):
+//
+//	proxy_set_header X-JA4-Hash $ssl_ja4_hash;
+type JA3Config struct {
+	Enabled bool `yaml:"enabled"`
+
+	// BlocklistFile is a path to a flat "hash [label]" file.
+	// Built-in KnownBadHashes are always active; this file extends them.
+	BlocklistFile string `yaml:"blocklist_file"`
+
+	// BlocklistHashes are inline hash→label pairs merged at startup.
+	BlocklistHashes map[string]string `yaml:"blocklist_hashes"`
+
+	// BanDuration controls how long a tlsfp-matched IP stays banned.
+	BanDuration Duration `yaml:"ban_duration"`
 }
 
 type RateLimitConfig struct {
@@ -36,6 +73,43 @@ type AntiBotConfig struct {
 	BlockEmptyUserAgent bool   `yaml:"block_empty_user_agent"`
 	BlockEmptyAccept    bool   `yaml:"block_empty_accept"`
 	BotUAListFile       string `yaml:"bot_ua_list_file"`
+}
+
+// ScraperConfig drives the behaviour-based scraper detection middleware.
+// The middleware accumulates a score per IP within a sliding window and
+// either issues a fresh challenge (challenge_threshold) or hard-bans the IP
+// (ban_threshold) when the score is reached.
+type ScraperConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	// Window is the sliding time window for per-IP analysis.
+	Window Duration `yaml:"window"`
+
+	// MinRequests is the minimum number of requests before ratio-based
+	// signals are evaluated (avoids false positives on first page load).
+	MinRequests int `yaml:"min_requests"`
+
+	// UniquePathRatioSoft/Hard — fraction of requests hitting distinct paths.
+	// Browsers revisit JS/CSS/images; crawlers don't.
+	UniquePathRatioSoft float64 `yaml:"unique_path_ratio_soft"` // +25 score
+	UniquePathRatioHard float64 `yaml:"unique_path_ratio_hard"` // +50 score
+
+	// SeqRunLength — how many consecutive incrementing numeric IDs in a
+	// path (e.g. /post/41, /post/42, /post/43) before flagging as enumeration.
+	SeqRunLength int `yaml:"seq_run_length"`
+
+	// MetronomeJitterMs — maximum standard deviation (ms) of inter-request
+	// gaps that is considered "bot-like uniform timing".
+	MetronomeJitterMs int `yaml:"metronome_jitter_ms"`
+
+	// ChallengeThreshold — score at which a fresh challenge is forced.
+	ChallengeThreshold int `yaml:"challenge_threshold"`
+
+	// BanThreshold — score at which the IP is hard-banned.
+	BanThreshold int `yaml:"ban_threshold"`
+
+	// BanDuration — how long a scraper ban lasts.
+	BanDuration Duration `yaml:"ban_duration"`
 }
 
 type ChallengesConfig struct {
@@ -56,6 +130,14 @@ type ChallengesConfig struct {
 	TorExitRefresh      Duration `yaml:"tor_exit_refresh"`
 	TorJSDifficulty     int      `yaml:"tor_js_difficulty"`
 	TorScryptDifficulty int      `yaml:"tor_scrypt_difficulty"`
+
+	// TemplateDir is an optional path to a directory containing challenge
+	// page templates. Files present in this directory override the embedded
+	// defaults; absent files fall back to the embedded versions. This lets
+	// operators customise branding without recompiling the binary.
+	//
+	// Supported file names: js_pow.html, scrypt.html, css.html, fingerprint.html
+	TemplateDir string `yaml:"template_dir"`
 }
 
 // AuthConfig — HTTP Basic Auth for sensitive path prefixes.
@@ -154,6 +236,38 @@ func (c *Config) validate() error {
 	}
 	if c.Bans.ScoreThreshold == 0 {
 		c.Bans.ScoreThreshold = 50
+	}
+	// Defaults for tlsfp
+	if c.JA3.BanDuration.Duration == 0 {
+		c.JA3.BanDuration.Duration = 24 * time.Hour
+	}
+	// Defaults for scraper detector
+	if c.Scraper.Window.Duration == 0 {
+		c.Scraper.Window.Duration = 2 * time.Minute
+	}
+	if c.Scraper.MinRequests == 0 {
+		c.Scraper.MinRequests = 10
+	}
+	if c.Scraper.UniquePathRatioSoft == 0 {
+		c.Scraper.UniquePathRatioSoft = 0.75
+	}
+	if c.Scraper.UniquePathRatioHard == 0 {
+		c.Scraper.UniquePathRatioHard = 0.92
+	}
+	if c.Scraper.SeqRunLength == 0 {
+		c.Scraper.SeqRunLength = 5
+	}
+	if c.Scraper.MetronomeJitterMs == 0 {
+		c.Scraper.MetronomeJitterMs = 50
+	}
+	if c.Scraper.ChallengeThreshold == 0 {
+		c.Scraper.ChallengeThreshold = 40
+	}
+	if c.Scraper.BanThreshold == 0 {
+		c.Scraper.BanThreshold = 80
+	}
+	if c.Scraper.BanDuration.Duration == 0 {
+		c.Scraper.BanDuration.Duration = 24 * time.Hour
 	}
 	return nil
 }

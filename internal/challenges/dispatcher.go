@@ -103,17 +103,8 @@ func (d *Dispatcher) selectChallenge(ip string) string {
 	}
 }
 
+// isDatacenterIP is a thin shim so the rest of the dispatcher package
+// continues to call the same name after we moved the logic to datacenter.go.
 func isDatacenterIP(ip string) bool {
-	for _, p := range []string{
-		"3.", "13.", "15.", "18.", "34.", "35.", "52.", "54.",
-		"20.", "40.", "51.", "104.45.", "137.", "138.",
-		"130.", "142.", "146.",
-		"104.16.", "104.17.", "104.18.", "104.19.",
-		"45.33.", "96.126.", "173.255.",
-	} {
-		if strings.HasPrefix(ip, p) {
-			return true
-		}
-	}
-	return false
+	return IsDatacenterIP(ip)
 }

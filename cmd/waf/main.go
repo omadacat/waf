@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +18,7 @@ import (
 	"git.omada.cafe/atf/waf/internal/bans"
 	"git.omada.cafe/atf/waf/internal/challenges"
 	"git.omada.cafe/atf/waf/internal/config"
+	"git.omada.cafe/atf/waf/internal/tlsfp"
 	"git.omada.cafe/atf/waf/internal/logger"
 	"git.omada.cafe/atf/waf/internal/middleware"
 	"git.omada.cafe/atf/waf/internal/proxy"
@@ -37,6 +40,11 @@ func main() {
 	log := logger.New(cfg.Logging)
 	log.Info("the WAF is starting", "listen", cfg.ListenAddr, "backends", len(cfg.Backends))
 
+	if err := challenges.LoadTemplates(cfg.Challenges.TemplateDir); err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: templates: %v\n", err)
+		os.Exit(1)
+	}
+
 	globalStore := store.New()
 	tokenMgr := token.New(cfg.TokenSecret, cfg.TokenTTL.Duration)
 
@@ -50,6 +58,33 @@ func main() {
 		}
 		banMgr.StartCleanup()
 		log.Info("ban manager ready", "persist", cfg.Bans.PersistFile)
+	}
+
+	// ── JA4 / TLS listener setup ────────────────────────────────────────
+	// Set up before building the middleware chain so ja3Listener is
+	// non-nil when passed to NewJA3Check in native TLS mode.
+	// In the nginx-fronted case (no tls: config) it stays nil and the
+	// middleware falls back to the X-JA4-Hash header nginx sets.
+	var tlsfpListener *tlsfp.Listener
+	var tlsListener net.Listener // non-nil only in native TLS mode
+
+	if cfg.TLS.Enabled() {
+		tcpLn, err := net.Listen("tcp", cfg.ListenAddr)
+		if err != nil {
+			log.Error("tls: cannot bind", "addr", cfg.ListenAddr, "err", err)
+			os.Exit(1)
+		}
+		tlsfpListener = tlsfp.NewListener(tcpLn)
+		tlsCert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
+		if err != nil {
+			log.Error("tls: cannot load key pair", "err", err)
+			os.Exit(1)
+		}
+		tlsListener = tls.NewListener(tlsfpListener, &tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+			MinVersion:   tls.VersionTLS12,
+		})
+		log.Info("native TLS enabled", "cert", cfg.TLS.CertFile)
 	}
 
 	router, err := proxy.New(cfg.Backends, log)
@@ -109,7 +144,9 @@ func main() {
 		log,
 	)
 	antiBotMW  := middleware.NoBot(sessionMW, cfg.AntiBot, log)
-	rateMW     := middleware.NewRateLimit(antiBotMW, cfg.RateLimit, banMgr, log)
+	ja3MW      := middleware.NewJA3Check(antiBotMW, cfg.JA3, tlsfpListener, banMgr, log)
+	scraperMW  := middleware.NewScraperDetector(ja3MW, cfg.Scraper, banMgr, log)
+	rateMW     := middleware.NewRateLimit(scraperMW, cfg.RateLimit, banMgr, log)
 	normMW     := middleware.NewPathNormalizer(rateMW, base)
 	metricsMW  := middleware.NewMetrics(normMW)
 
@@ -144,10 +181,15 @@ func main() {
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 
 	go func() {
-		log.Info("WAF proxy listening", "addr", cfg.ListenAddr)
-		if err := srv.ListenAndServe(); err != nil &&
-			!errors.Is(err, http.ErrServerClosed) {
-			log.Error("server fatal error", "err", err)
+		log.Info("WAF proxy listening", "addr", cfg.ListenAddr, "tls", cfg.TLS.Enabled())
+		var serveErr error
+		if tlsListener != nil {
+			serveErr = srv.Serve(tlsListener)
+		} else {
+			serveErr = srv.ListenAndServe()
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			log.Error("server fatal error", "err", serveErr)
 			os.Exit(1)
 		}
 	}()

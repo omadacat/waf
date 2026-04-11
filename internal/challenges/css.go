@@ -2,6 +2,7 @@ package challenges
 
 import (
 	"fmt"
+	"html/template"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
@@ -62,6 +63,16 @@ func (h *CSSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// cssTemplateData is passed to templates/css.html.
+// CSS and HTML fields use typed wrappers so html/template does not escape them.
+type cssTemplateData struct {
+	DoneURL       string
+	KeyframeCSS   template.CSS
+	HoneypotCSS   template.CSS
+	HoneypotLinks template.HTML
+	HoneypotImgs  template.HTML
+}
+
 func (h *CSSHandler) servePage(w http.ResponseWriter, r *http.Request) {
 	ip := extractClientIP(r)
 	redirect := r.URL.Query().Get("redirect")
@@ -82,8 +93,54 @@ func (h *CSSHandler) servePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusForbidden)
-	fmt.Fprint(w, h.buildPage(sessID, expected, redirect))
+
+	data := h.buildTemplateData(sessID, expected, redirect)
+	if err := mustTemplate("css.html", tmplCSS).Execute(w, data); err != nil {
+		h.log.Error("css: template execute error", "err", err)
+	}
 	h.log.Debug("css: challenge served", "ip", ip)
+}
+
+func (h *CSSHandler) buildTemplateData(sessID string, expected []string, redirect string) cssTemplateData {
+	imgBase := h.basePath + "/css/img/"
+	doneURL := h.basePath + "/css/done?s=" + sessID + "&redirect=" + urlPercentEncode(redirect)
+	hpLetter := honeypotLetters[rand.IntN(len(honeypotLetters))]
+
+	// Build @keyframes CSS for the image sequence.
+	var kf strings.Builder
+	kf.WriteString("@keyframes csswaf{\n")
+	for i, img := range expected {
+		pct := i * 100 / len(expected)
+		kf.WriteString(fmt.Sprintf("  %d%% { content: url('%s%s?s=%s'); }\n", pct, imgBase, img, sessID))
+	}
+	kf.WriteString("}\n")
+
+	// Honeypot CSS element (fetched via background/content property).
+	hpCSS := fmt.Sprintf(".hpot{content:url('%s%s?s=%s&from=css')}", imgBase, hpLetter, sessID)
+
+	// Hidden honeypot <a> links (display:none via CSS; JS-disabled crawlers may still fetch).
+	var hpLinks strings.Builder
+	for _, hp := range honeypotLetters {
+		hpLinks.WriteString(fmt.Sprintf(
+			`<a href="%s%s?s=%s&from=a_href" class="hpa">x</a>`+"\n",
+			imgBase, hp, sessID))
+	}
+
+	// Zero-size hidden <img> honeypots.
+	var hpImgs strings.Builder
+	for _, hp := range honeypotLetters {
+		hpImgs.WriteString(fmt.Sprintf(
+			`<img src="%s%s?s=%s&from=img_src" style="width:0;height:0;position:absolute;top:-9999px;" loading="lazy">`+"\n",
+			imgBase, hp, sessID))
+	}
+
+	return cssTemplateData{
+		DoneURL:       doneURL,
+		KeyframeCSS:   template.CSS(kf.String()),
+		HoneypotCSS:   template.CSS(hpCSS),
+		HoneypotLinks: template.HTML(hpLinks.String()),
+		HoneypotImgs:  template.HTML(hpImgs.String()),
+	}
 }
 
 func (h *CSSHandler) handleImage(w http.ResponseWriter, r *http.Request) {
@@ -180,74 +237,6 @@ func (h *CSSHandler) IsValidated(r *http.Request) (string, bool) {
 	}
 	sess := raw.(*CSSSession)
 	return c.Value, sess.Validated && !sess.Failed && sess.IP == extractClientIP(r)
-}
-
-func (h *CSSHandler) buildPage(sessID string, expected []string, redirect string) string {
-	base := h.basePath + "/css"
-	imgBase := base + "/img/"
-	doneURL := base + "/done?s=" + sessID + "&redirect=" + urlPercentEncode(redirect)
-	cssHoneypot := honeypotLetters[rand.IntN(len(honeypotLetters))]
-
-	var kf strings.Builder
-	for i, img := range expected {
-		kf.WriteString(fmt.Sprintf("  %d%% { content: url('%s%s?s=%s'); }\n",
-			i*100/len(expected), imgBase, img, sessID))
-	}
-
-	var hpLinks, hpImgs strings.Builder
-	for _, hp := range honeypotLetters {
-		hpLinks.WriteString(`<a href="` + imgBase + hp + `?s=` + sessID + `&from=a_href" class="hpa">x</a>` + "\n")
-		hpImgs.WriteString(`<img src="` + imgBase + hp + `?s=` + sessID + `&from=img_src" style="width:0;height:0;position:absolute;top:-9999px;" loading="lazy">` + "\n")
-	}
-
-	var b strings.Builder
-	b.WriteString(`<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="5.5; url=` + doneURL + `">
-<title>Checking your browser…</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-html{width:100%;background:#fff;color:#000;
-  font-family:"Noto Serif","Source Serif",Times New Roman,serif;line-height:1.75}
-html,body{min-height:100vh}
-body{display:flex;margin:0 auto;max-width:83vw;flex-wrap:wrap;flex-direction:column;justify-content:space-between}
-header{margin:10vh 0 0;padding-bottom:1em;border-bottom:5px solid #328c60}
-header a{font-size:1.5em;font-weight:bold;color:#000;text-decoration:none}
-main{display:flex;margin:1em auto;min-width:70vw;flex-wrap:wrap;flex-direction:column;padding:1em}
-h1{line-height:1.5;font-size:1.625em;margin-top:1em;margin-bottom:.5em}
-p{margin:.5em 0}
-a{color:#36c}
-em,footer{color:#777;font-style:normal}
-footer{margin:0 0 10vh;padding-top:1em;border-top:1px solid #eaecf0;font-size:.9em}
-.hpot{content:url('` + imgBase + cssHoneypot + `?s=` + sessID + `&from=css')}
-@keyframes csswaf{
-` + kf.String() + `}
-.csswaf-hidden{width:1px;height:1px;position:absolute;top:0;left:0;animation:csswaf 3.5s linear forwards}
-.hpa{display:none;width:0;height:0;position:absolute;top:-9898px;left:-9898px}
-.spin{display:inline-block;width:40px;height:40px;border:4px solid #eee;border-top-color:#328c60;border-radius:50%;animation:sp .8s linear infinite;margin:1em 0}
-@keyframes sp{to{transform:rotate(360deg)}}
-@media(prefers-color-scheme:dark){html{background:#121212;color:#e0e0e0}header{border-bottom-color:#2d7353}header a{color:#e0e0e0}footer{border-top-color:#333;color:#aaa}}
-</style>
-</head>
-<body>
-<header><a href="/">Checking your browser</a></header>
-<div class="hpot" aria-hidden="true"></div>
-<div class="csswaf-hidden" aria-hidden="true"></div>
-`)
-	b.WriteString(hpLinks.String())
-	b.WriteString(`<main>
-  <h1>Just a moment…<em> (NoJS challenge)</em></h1>
-  <p>Verifying your browser without JavaScript. Completes in ~5 seconds.</p>
-  <div class="spin" aria-hidden="true"></div>
-`)
-	b.WriteString(hpImgs.String())
-	b.WriteString(`</main>
-<footer><p>Protected by <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a></p></footer>
-</body></html>`)
-	return b.String()
 }
 
 func shuffleLetters(in []string) []string {

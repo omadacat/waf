@@ -2,6 +2,7 @@ package challenges
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"math/big"
@@ -73,4 +74,10 @@ func urlPercentEncode(s string) string {
 		}
 	}
 	return sb.String()
+}
+
+// sha256Sum is a thin wrapper around crypto/sha256.Sum256.
+// It lets challenge handlers avoid importing crypto/sha256 directly.
+func sha256Sum(data []byte) [32]byte {
+	return sha256.Sum256(data)
 }
