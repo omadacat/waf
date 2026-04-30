@@ -99,12 +99,12 @@ func (d *Dispatcher) Dispatch(w http.ResponseWriter, r *http.Request) {
 func (d *Dispatcher) selectChallenge(ip string, r *http.Request) string {
 	isTor := d.tor != nil && d.tor.Contains(ip)
 
-	// Policy override — session middleware sets this from policy engine match.
+	// session middleware sets this from policy engine match.
 	if ch := r.Header.Get("X-WAF-Policy-Challenge"); ch != "" && ch != "none" {
 		return ch
 	}
 
-	// Reputation escalation — flagged subnet/fingerprint → always scrypt.
+	// flagged subnet/fingerprint -> always scrypt.
 	if r.Header.Get("X-WAF-Rep-Score") != "" {
 		return "scrypt"
 	}
@@ -128,8 +128,7 @@ func (d *Dispatcher) selectChallenge(ip string, r *http.Request) string {
 	}
 }
 
-// isDatacenterIP is a thin shim so the rest of the dispatcher package
-// continues to call the same name after we moved the logic to datacenter.go.
+// isDatacenterIP is a thin shim so the rest of the dispatcher package continues to call the same name after we moved the logic to datacenter.go.
 func isDatacenterIP(ip string) bool {
 	return IsDatacenterIP(ip)
 }

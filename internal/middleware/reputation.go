@@ -55,8 +55,7 @@ func (rep *Reputation) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Strip headers that should only originate from trusted upstream sources.
-	// This runs at the outermost layer so every downstream middleware sees a
-	// clean request regardless of what the client sent.
+	// This runs at the outermost layer so every downstream middleware sees a clean request regardless of what the client sent.
 	for _, h := range []string{
 		"X-Real-Ip",
 		"X-Ja4-Hash", "X-Ja4", "X-Waf-Ja4",
@@ -70,11 +69,9 @@ func (rep *Reputation) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fingerprint := rep.resolveFingerprint(r)
 	score := rep.store.GroupScore(ip, fingerprint)
 
-	// ── Pre-emptive ban ───────────────────────────────────────────────────
-	// ban_threshold is intentionally high (default 60) so legitimate users
-	// in a bad subnet are not caught.  A full ban applies regardless of
-	// whether the IP holds a valid token — if a group has accumulated this
-	// much damage, we want them gone.
+	// ban_threshold is intentionally high (default 60) so legitimate users in a bad subnet are not caught.
+	// A full ban applies regardless of whether the IP holds a valid token
+	// if a group has accumulated this much damage, we want them gone.
 	if score >= rep.cfg.BanThreshold {
 		if rep.banMgr != nil {
 			rep.banMgr.Ban(ip, "reputation:group_score", rep.cfg.BanDuration, "rep-001", int(score))
@@ -85,14 +82,9 @@ func (rep *Reputation) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ── Challenge escalation annotation ───────────────────────────────────
-	// When score ≥ challenge_threshold, annotate the request so the
-	// challenge dispatcher routes to scrypt instead of JS PoW.
-	// We do NOT strip or revoke the existing token: that causes an
-	// unresolvable redirect loop (token set → request → token stripped →
-	// challenge → token set → ...).  Legitimate users who have already
-	// passed a challenge keep their session.  Tokenless requests from
-	// flagged subnets are naturally challenged by sessionMW anyway;
+	// When score challenge_threshold, annotate the request so the challenge dispatcher routes to scrypt instead of JS PoW.
+	// legit users who have already passed a challenge keep their session.
+	// Tokenless requests from flagged subnets are naturally challenged by sessionMW anyway;
 	// the annotation only upgrades the challenge difficulty.
 	if score >= rep.cfg.ChallengeThreshold {
 		r.Header.Set("X-WAF-Rep-Score", fmt.Sprintf("%.0f", score))
@@ -100,7 +92,6 @@ func (rep *Reputation) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			"ip", ip, "score", score, "fp", fingerprint)
 	}
 
-	// ── Reactive penalty recording ─────────────────────────────────────
 	rw := &reputationWriter{ResponseWriter: w}
 	rep.next.ServeHTTP(rw, r)
 
@@ -126,8 +117,6 @@ func (rep *Reputation) resolveFingerprint(r *http.Request) string {
 	return ""
 }
 
-// ── helpers ───────────────────────────────────────────────────────────────────
-
 func penaltyForStatus(status int) float64 {
 	switch status {
 	case http.StatusForbidden:
@@ -146,8 +135,6 @@ func subnetKeyFor(ip string) string {
 	}
 	return ip
 }
-
-// ── reputationWriter ─────────────────────────────────────────────────────────
 
 type reputationWriter struct {
 	http.ResponseWriter

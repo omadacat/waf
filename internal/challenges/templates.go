@@ -22,19 +22,9 @@ var (
 )
 
 // LoadTemplates parses all challenge page templates.
-//
-// If templateDir is non-empty the templates in that directory take precedence
-// over the embedded defaults — any file present on disk overrides its
-// embedded counterpart, missing files fall back to the embed.  This lets
-// operators customise branding without a recompile.
-//
-// Template file names (relative to templateDir or the embedded "templates/"
-// directory):
-//
-//	js_pow.html        — JS proof-of-work challenge
-//	scrypt.html        — memory-hard scrypt challenge
-//	css.html           — no-JS CSS challenge
-//	fingerprint.html   — browser fingerprint challenge
+// If templateDir is non-empty the templates in that directory take precedence over the embedded defaults
+// any file present on disk overrides its embedded counterpart, missing files fall back to the embed.
+// This lets operators customise branding without a recompile.
 func LoadTemplates(templateDir string) error {
 	type entry struct {
 		name string
@@ -70,7 +60,6 @@ func loadTemplateSource(templateDir, name string) (string, error) {
 		if data, err := os.ReadFile(diskPath); err == nil {
 			return string(data), nil
 		}
-		// File absent on disk — fall through to embedded.
 	}
 
 	embeddedPath := filepath.Join("templates", name)

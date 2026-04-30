@@ -13,18 +13,18 @@ import (
 
 // CookieChallenge is a zero-computation pre-filter that sits before JS PoW.
 //
-// Round 1 — new visitor, no cookie:
+// Round 1: new visitor, no cookie:
 //   Issue a signed short-lived cookie (waf_pre) and redirect to the same URL.
 //   Any HTTP client that can't follow redirects or store cookies fails here.
 //   This silently eliminates curl, wget, Python-requests without a cookie jar,
 //   and most scrapy/mechanize bots with a single round trip, zero CPU spent.
 //
-// Round 2 — visitor returns with cookie:
-//   Validate the HMAC signature and expiry.  If valid, promote to a full WAF
-//   token and serve the request.  If invalid or expired, restart from round 1.
+// Round 2: visitor returns with cookie:
+//   Validate the HMAC signature and expiry.
+//   If valid, promote to a full WAFtoken and serve the request.
+//   If invalid or expired, restart from round 1.
 //
-// The signed cookie binds to the client IP so it cannot be forwarded to another
-// machine and replayed.
+// The signed cookie binds to the client IP so it cannot be forwarded to another machine and replayed.
 type CookieChallenge struct {
 	secret   []byte
 	tokenMgr *token.Manager
@@ -45,7 +45,7 @@ func (cc *CookieChallenge) Handle(w http.ResponseWriter, r *http.Request) {
 
 	if c, err := r.Cookie(cookiePreName); err == nil {
 		if cc.validateCookie(c.Value, ip) {
-			// Cookie valid — promote to full token and send to destination.
+			// promote to full token and send to destination.
 			tok := cc.tokenMgr.Issue(ip)
 			secure := r.Header.Get("X-Forwarded-Proto") == "https"
 			http.SetCookie(w, &http.Cookie{
@@ -55,7 +55,7 @@ func (cc *CookieChallenge) Handle(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, redirect, http.StatusFound)
 			return
 		}
-		// Bad/expired cookie — clear it and re-issue.
+		// clear it and re-issue.
 		http.SetCookie(w, &http.Cookie{
 			Name: cookiePreName, Value: "", Path: "/", MaxAge: -1,
 		})

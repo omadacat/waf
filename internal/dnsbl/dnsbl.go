@@ -1,15 +1,3 @@
-// Package dnsbl provides asynchronous DNS-based blocklist checking.
-//
-// When an IP is first seen, a background lookup is fired against configured
-// DNSBL zones.  Results are cached so subsequent requests from the same IP
-// pay no lookup cost.  A listed IP incurs a reputation penalty; the first
-// request always passes through (the lookup is non-blocking), and subsequent
-// requests carry the penalty in the reputation score.
-//
-// Standard DNSBL query format (RFC 5782):
-//   Reverse the octets of the IP, append the zone name.
-//   1.2.3.4 → 4.3.2.1.zen.spamhaus.org
-//   An A-record response indicates the IP is listed.
 package dnsbl
 
 import (
@@ -77,10 +65,8 @@ func New(zones []string, ttl time.Duration, log *slog.Logger) *Checker {
 	}
 }
 
-// Check returns the cached DNSBL result for ip.
-// If no cached result exists or it has expired, a background lookup is
-// started and (Result{}, false) is returned immediately — the caller
-// should not block on the first request from a new IP.
+// Check returns the cached DNSBL result for ip. If no cached result exists or it has expired, a background lookup is started and (Result{}, false) is returned immediately
+// the caller should not block on the first request from a new IP.
 //
 // The second return value is true when a cached result was found.
 func (c *Checker) Check(ip string) (Result, bool) {

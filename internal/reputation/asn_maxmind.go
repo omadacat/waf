@@ -8,14 +8,12 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 )
 
-// ASNLookup resolves IP addresses to ASNs using a MaxMind GeoLite2-ASN
-// or GeoIP2-ASN MMDB file.
+// ASNLookup resolves IP addresses to ASNs using a MaxMind GeoLite2-ASN or GeoIP2-ASN MMDB file.
 type ASNLookup struct {
 	db *maxminddb.Reader
 }
 
-// NewASNLookup opens the MMDB at dbPath. If dbPath is empty, returns a
-// no-op lookup (same behaviour as the stub build).
+// NewASNLookup opens the MMDB at dbPath. If dbPath is empty, returns a no-op lookup (same behaviour as the stub build).
 func NewASNLookup(dbPath string) (*ASNLookup, error) {
 	if dbPath == "" {
 		return &ASNLookup{}, nil

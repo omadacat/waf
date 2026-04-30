@@ -6,7 +6,6 @@
 #
 # One regex per line.  Lines starting with # are ignored.
 
-# ── AI scrapers ───────────────────────────────────────────────────────────
 (?i)Amazonbot
 (?i)Applebot-Extended
 (?i)Google-Extended
@@ -18,7 +17,6 @@
 (?i)Meta-ExternalAgent
 (?i)Meta-ExternalFetcher
 
-# ── Vulnerability scanners ────────────────────────────────────────────────
 (?i)Nikto
 (?i)sqlmap
 (?i)nuclei
@@ -31,7 +29,6 @@
 (?i)ZmEu
 (?i)Zgrab
 
-# ── Optional: generic HTTP libraries ──────────────────────────────────────
 # WARNING: uncomment these ONLY if no service behind your WAF uses them.
 # Nextcloud desktop = Go-http-client, DAVx5/Jellyfin Android = OkHttp,
 # many RSS readers use python-requests or curl.

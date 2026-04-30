@@ -7,48 +7,12 @@ import (
 	"time"
 )
 
-// Listener wraps a net.Listener.  For each accepted connection it peeks
-// at the first bytes, attempts to parse a TLS ClientHello, and stores the
-// resulting JA4 fingerprint keyed by the connection's remote address string.
-//
-// The underlying connection is unaffected: all peeked bytes are replayed
-// to crypto/tls transparently via a peekConn.
-//
-// When the WAF sits behind nginx and nginx terminates TLS, this listener
-// is never activated — use the X-JA4-Hash header path instead (see
-// middleware/ja3.go for the middleware side).  Activate this listener when the WAF should
-// terminate TLS directly:
-//
-//	l, err := tls.Listen("tcp", addr, tlsCfg)
-//	tlsfpL := tlsfp.NewListener(l)
-//	srv.Serve(ja3l)
-//
-// Nginx configuration for the header path (requires a JA4-capable nginx
-// module, e.g. nginx-ssl-ja4, or an OpenResty Lua implementation):
-//
-//	# In the server block that proxies to the WAF:
-//	proxy_set_header X-JA4-Hash $ssl_ja4_hash;  # nginx-ssl-ja4 module
-//
-// Without that module, use the Lua alternative:
-//
-//	# lua_package_path "/usr/local/share/lua/5.1/?.lua;;";
-//	# access_by_lua_block {
-//	#     local ja4 = require("ja4")
-//	#     ngx.req.set_header("X-JA4-Hash", ja4.hash())
-//	# }
-//
-// The middleware reads whichever of the two sources is available and falls
-// back gracefully when neither is present.
 type Listener struct {
 	net.Listener
 	mu     sync.Mutex
 	hashes map[string]string // remote addr → JA4 fingerprint
 }
 
-// NewListener wraps inner.  inner may already be a tls.Listener — in that
-// case native JA4 peeking is impossible (TLS is handled internally by
-// crypto/tls before our Read() is ever called).  Pass the raw TCP listener
-// and apply TLS afterwards via tls.Server for native mode.
 func NewListener(inner net.Listener) *Listener {
 	return &Listener{
 		Listener: inner,
@@ -56,10 +20,6 @@ func NewListener(inner net.Listener) *Listener {
 	}
 }
 
-// Accept wraps the inner Accept, peeks the first 4 KB of each connection,
-// and attempts to compute a JA4 fingerprint.  If parsing fails (non-TLS
-// connection, truncated record, etc.) the connection is still served
-// normally — the fingerprint simply won't be available for that request.
 func (l *Listener) Accept() (net.Conn, error) {
 	conn, err := l.Listener.Accept()
 	if err != nil {
@@ -113,8 +73,6 @@ func (l *Listener) Delete(remoteAddr string) {
 	delete(l.hashes, remoteAddr)
 	l.mu.Unlock()
 }
-
-// ── peekConn ─────────────────────────────────────────────────────────────────
 
 // peekConn replays the bytes that were already read during the ClientHello
 // peek before delegating further reads to the underlying connection.

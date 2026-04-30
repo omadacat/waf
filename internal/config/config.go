@@ -33,14 +33,6 @@ type Config struct {
 }
 
 
-// JA3Config controls TLS ClientHello fingerprint checking.
-//
-// Two hash sources are supported (checked in order):
-//  1. X-JA4-Hash / X-JA4 header set by an upstream proxy (nginx, haproxy…).
-//
-// Nginx setup (requires ngx_ssl_ja3 module or OpenResty):
-//
-//	proxy_set_header X-JA4-Hash $ssl_ja4_hash;
 type JA3Config struct {
 	Enabled bool `yaml:"enabled"`
 

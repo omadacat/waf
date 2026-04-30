@@ -1,16 +1,3 @@
-// Package abuseipdb provides async IP reputation checking via the AbuseIPDB
-// v2 API (https://www.abuseipdb.com/api.html).
-//
-// Like the DNSBL checker, lookups fire in the background on first sight of a
-// new IP.  Results are cached and feed into the reputation store as penalties.
-// The first request from an unknown IP always passes through — subsequent
-// requests carry the penalty.
-//
-// Free tier: 1 000 lookups/day.  A 24h cache TTL means the same IP only
-// costs one lookup regardless of how many times it visits.
-//
-// To enable, set abuseipdb.api_key in config.yaml.  Without an API key the
-// checker is a no-op.
 package abuseipdb
 
 import (
@@ -61,8 +48,8 @@ type Checker struct {
 	log     *slog.Logger
 }
 
-// New creates a Checker. apiKey may be empty — in that case Check always
-// returns (Result{}, true) so callers can skip without a nil check.
+// New creates a Checker. apiKey may be empty
+// in that case Check always returns (Result{}, true) so callers can skip without a nil check.
 func New(apiKey string, ttl time.Duration, log *slog.Logger) *Checker {
 	if ttl <= 0 {
 		ttl = 24 * time.Hour

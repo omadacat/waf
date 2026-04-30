@@ -1,5 +1,6 @@
 # ============================================================
-# WAF Rules — loaded at runtime from /etc/waf/waf_rules.yaml
+# WAF Rules
+# loaded at runtime from /etc/waf/waf_rules.yaml
 # Falls back to built-in rules if this file is absent.
 #
 # Fields:
@@ -59,7 +60,7 @@
   tag: sqli
   message: "SQL injection - stacked query"
 
-# Cross‑Site Scripting 
+# Cross‑Site Scripting
 - id: xss-001
   name: "XSS - script/event handler"
   pattern: '(?i)(<[\s]*script[\s/>]|javascript[\s]*:|on\w+[\s]*=[\s]*["\x27]?[^"\x27\s>]+|<[\s]*iframe[\s/>]|<[\s]*object[\s/>]|<[\s]*embed[\s/>])'
@@ -109,7 +110,7 @@
   tag: traversal
   message: "Sensitive file access"
 
-# Command Injection 
+# Command Injection
 - id: cmdi-001
   name: "Command injection - shell metacharacters"
   pattern: "(?i)([;|`]\\s*(cat|ls|id|whoami|uname|wget|curl|bash|sh\\b|cmd\\.exe|powershell)\\b|\\$\\([^)]+\\)|`[^`]+`)"
@@ -127,7 +128,7 @@
   tag: ssrf
   message: "SSRF internal address"
 
-# LFI / PHP wrappers 
+# LFI / PHP wrappers
 - id: lfi-001
   name: "LFI - PHP stream wrappers"
   pattern: '(?i)(php:\/\/filter|php:\/\/input|data:\/\/|expect:\/\/|zip:\/\/|phar:\/\/)'
@@ -136,7 +137,7 @@
   tag: lfi
   message: "LFI - PHP stream wrapper"
 
-# XXE 
+# XXE
 - id: xxe-001
   name: "XXE - XML external entity"
   pattern: '(?i)(<!entity|<!doctype.*system|SYSTEM\s+["'']http)'
@@ -148,13 +149,12 @@
 # Security scanners (User‑Agent)
 - id: scanner-001
   name: "Suspicious UA - scanner tools"
-  pattern: '(?i)(nikto|sqlmap|nmap|masscan|nuclei|dirbuster|gobuster|ffuf|wfuzz|acunetix|nessus|openvas|hydra|burpsuite)'
+  pattern: "(?i)(nikto|sqlmap|nmap|masscan|nuclei|dirbuster|gobuster|ffuf|wfuzz|acunetix|nessus|openvas|hydra|burpsuite)"
   targets: [ua]
   action: block
   tag: scanner
   message: "Security scanner ua"
-
-# Custom rules 
+# Custom rules
 #add your own below
 #
 # - id: custom-001

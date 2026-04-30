@@ -124,7 +124,6 @@ func (h *FingerprintHandler) verify(w http.ResponseWriter, r *http.Request) {
 func (h *FingerprintHandler) scoreFingerprint(fp *FingerprintData) int {
 	score := 100
 
-	// ── HTTP header signals ───────────────────────────────────────────────
 	if fp.Headers["accept-language"] == "" {
 		score -= 20 // increased: every real browser sends this
 	}
@@ -132,7 +131,6 @@ func (h *FingerprintHandler) scoreFingerprint(fp *FingerprintData) int {
 		score -= 15 // increased: all browsers compress
 	}
 
-	// ── Browser capability signals ────────────────────────────────────────
 	if len(fp.Plugins) == 0 {
 		score -= 10 // mild: modern Chrome reports no plugins via Plugin API
 	}
@@ -152,7 +150,6 @@ func (h *FingerprintHandler) scoreFingerprint(fp *FingerprintData) int {
 		score -= 15 // navigator.languages always non-empty in real browsers
 	}
 
-	// ── Behavioural signals ───────────────────────────────────────────────
 	if len(fp.MouseMovements) == 0 {
 		score -= 25 // strongest single signal: bots never move the mouse
 	} else if len(fp.MouseMovements) < 3 {
@@ -168,12 +165,11 @@ func (h *FingerprintHandler) scoreFingerprint(fp *FingerprintData) int {
 		score -= 10
 	}
 
-	// ── Navigation timing ─────────────────────────────────────────────────
 	if fp.Timing.NavigationStart > 0 {
 		elapsed := fp.Timing.LoadEventEnd - fp.Timing.NavigationStart
 		if elapsed > 0 && elapsed < 300 {
-			// Page rendered in under 300 ms — suspiciously fast even for a
-			// local server; real browsers need time to parse and paint.
+			// Page rendered in under 300 ms
+			// suspiciously fast even for a local server; real browsers need time to parse and paint.
 			score -= 20
 		} else if elapsed <= 0 {
 			// loadEventEnd before navigationStart is impossible in a real browser.
@@ -181,7 +177,6 @@ func (h *FingerprintHandler) scoreFingerprint(fp *FingerprintData) int {
 		}
 	}
 
-	// ── Screen sanity ─────────────────────────────────────────────────────
 	if fp.ScreenRes == "" || fp.ScreenRes == "0x0" {
 		score -= 15
 	}
@@ -189,8 +184,8 @@ func (h *FingerprintHandler) scoreFingerprint(fp *FingerprintData) int {
 	return score
 }
 
-// mouseIsLinear returns true if all mouse movements lie on a single straight
-// line — a sign of scripted / replay-based fingerprint spoofing.
+// mouseIsLinear returns true if all mouse movements lie on a single straight line
+// a sign of scripted / replay-based fingerprint spoofing.
 func mouseIsLinear(events []MouseEvent) bool {
 	if len(events) < 3 {
 		return false

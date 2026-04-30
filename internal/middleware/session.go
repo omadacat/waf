@@ -52,13 +52,11 @@ func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host = host[:i]
 	}
 
-	// ── Exempt paths and hosts (challenge endpoints, well-known, etc.) ────
 	if s.cfg.IsExemptPath(path) || s.cfg.IsExemptHost(host) {
 		s.inner.ServeHTTP(w, r)
 		return
 	}
 
-	// ── Policy engine ────────────────────────────────────────────────────
 	var policyChallenge string
 	if s.policy != nil {
 		if action, matched := s.policy.Match(r); matched {
@@ -76,7 +74,6 @@ func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// ── Token validation ─────────────────────────────────────────────────
 	ip := extractIP(r)
 	if cookie, err := r.Cookie(token.CookieName()); err == nil && cookie.Value != "" {
 		if s.tokens.Validate(cookie.Value, ip) {
@@ -85,13 +82,10 @@ func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			secure := r.Header.Get("X-Forwarded-Proto") == "https"
 			w.Header().Set("Set-Cookie", token.CookieHeader(newTok, s.tokens.TTL(), secure))
 
-			// If the policy demands a harder challenge than the existing token
-			// represents, escalate only when the policy specifically requires
-			// scrypt and we have a non-scrypt token.  In practice, this is
-			// enforced by the reputation escalation path; policy-based forced
-			// re-challenge would need token metadata we don't store.
-			// For now, an existing valid token always passes — policy "scrypt"
-			// means "use scrypt for *new* challenges", not "revoke existing tokens".
+			// If the policy demands a harder challenge than the existing token represents, escalate only when the policy specifically requires scrypt and we have a non-scrypt token.
+			// In practice, this is enforced by the reputation escalation path; policy-based forced re-challenge would need token metadata we don't store.
+			// For now, an existing valid token always passes
+			// policy "scrypt" means "use scrypt for *new* challenges", not "revoke existing tokens".
 			s.inner.ServeHTTP(w, r)
 			return
 		}

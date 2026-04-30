@@ -12,16 +12,6 @@ import (
 	"git.omada.cafe/atf/waf/internal/policy"
 )
 
-// BandwidthTracker counts bytes served per IP per window and penalises IPs
-// that consume a disproportionate share of bandwidth.
-//
-// This is the direct answer to the 20 mbps problem: a scraper downloading
-// large media files (Jellyfin, large git repos, image galleries) accumulates
-// bytes fast and hits the threshold within seconds, regardless of whether
-// it passed PoW and holds a valid token.
-//
-// Signals are distinct from the scraper detector — an IP can hit bandwidth
-// limits without triggering any of the request-pattern signals.
 type BandwidthTracker struct {
 	next   http.Handler
 	cfg    config.BandwidthConfig
@@ -58,8 +48,7 @@ func (bt *BandwidthTracker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Skip bandwidth tracking for policy-exempt paths (e.g. Nextcloud WebDAV
-	// uploads — user is uploading TO the server, not consuming bandwidth FROM it).
+	// Skip bandwidth tracking for policy-exempt paths (e.g. Nextcloud WebDAV uploads user is uploading TO the server, not consuming bandwidth FROM it).
 	if bt.pol != nil {
 		if action, matched := bt.pol.Match(r); matched && action.SkipChallenge {
 			bt.next.ServeHTTP(w, r)

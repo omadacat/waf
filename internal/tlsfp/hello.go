@@ -1,19 +1,3 @@
-// Package tlsfp implements TLS ClientHello fingerprinting using the JA4
-// algorithm (John Althouse / FoxIO, 2023).
-//
-// JA4 supersedes JA3 because it sorts cipher suites and extensions before
-// hashing, making order-randomisation attacks ineffective.
-//
-// Two operational modes are supported:
-//
-//  1. Header mode (nginx in front): nginx computes the JA4 hash and sets
-//     X-JA4-Hash; the middleware reads that header.
-//     Nginx config (requires ngx_http_ssl_ja4 or equivalent):
-//       proxy_set_header X-JA4-Hash $ssl_ja4_hash;
-//
-//  2. Native mode (WAF terminates TLS): wrap net.Listener with NewListener;
-//     it peeks each raw TCP connection before handing it to crypto/tls,
-//     computing the full JA4 hash from the ClientHello bytes.
 package tlsfp
 
 import (
@@ -171,7 +155,6 @@ func ParseClientHello(data []byte) (*Hello, error) {
 		return nil, err
 	}
 
-	// ── Handshake header (4 bytes) ───────────────────────────────────────
 	msgType, err := rec.uint8()
 	if err != nil {
 		return nil, err
@@ -188,7 +171,6 @@ func ParseClientHello(data []byte) (*Hello, error) {
 		return nil, err
 	}
 
-	// ── ClientHello body ─────────────────────────────────────────────────
 	hello := &Hello{}
 
 	hello.LegacyVersion, err = hs.uint16()

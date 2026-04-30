@@ -58,8 +58,7 @@ func (t *Tarpit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		)
 
 		// Sleep without holding a goroutine busy the whole time.
-		// We still hold the connection (that's the point), but we can
-		// respond to context cancellation if the client gives up.
+		// We still hold the connection (that's the point), but we can respond to context cancellation if the client gives up.
 		select {
 		case <-time.After(delay):
 		case <-r.Context().Done():

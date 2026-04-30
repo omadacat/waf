@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"git.omada.cafe/atf/waf/internal/bans"
-	"git.omada.cafe/atf/waf/internal/dnsbl"
-	"git.omada.cafe/atf/waf/internal/policy"
 	"git.omada.cafe/atf/waf/internal/challenges"
 	"git.omada.cafe/atf/waf/internal/config"
+	"git.omada.cafe/atf/waf/internal/dnsbl"
 	"git.omada.cafe/atf/waf/internal/logger"
 	"git.omada.cafe/atf/waf/internal/middleware"
+	"git.omada.cafe/atf/waf/internal/policy"
 	"git.omada.cafe/atf/waf/internal/proxy"
 	"git.omada.cafe/atf/waf/internal/reputation"
 	"git.omada.cafe/atf/waf/internal/store"
@@ -60,7 +60,6 @@ func main() {
 		log.Info("ban manager ready", "persist", cfg.Bans.PersistFile)
 	}
 
-	// ── Reputation store ──────────────────────────────────────────────────
 	repCfg := reputation.Config{
 		Enabled:                cfg.Reputation.Enabled,
 		PersistFile:            cfg.Reputation.PersistFile,
@@ -80,10 +79,8 @@ func main() {
 	}
 	defer repStore.Close()
 
-	// ── DNSBL checker ────────────────────────────────────────────────────
 	dnsblChecker := dnsbl.New(cfg.DNSBL.Zones, cfg.DNSBL.TTL.Duration, log)
 
-	// ── Policy engine ─────────────────────────────────────────────────────
 	var policyRules []policy.Rule
 	for _, r := range cfg.Policies {
 		policyRules = append(policyRules, policy.Rule{
@@ -97,14 +94,12 @@ func main() {
 	policyEngine := policy.New(policyRules)
 
 
-	// ── Proxy router ──────────────────────────────────────────────────────
 	router, err := proxy.New(cfg.Backends, log)
 	if err != nil {
 		log.Error("failed to initialise proxy router", "err", err)
 		os.Exit(1)
 	}
 
-	// ── Inner handler stack (WAF rules → auth) ────────────────────────────
 	var inner http.Handler = router
 	if cfg.WAF.Enabled {
 		engine, err := waf.New(cfg.WAF.Regex.RulesFile, log)
@@ -119,7 +114,7 @@ func main() {
 		}
 		inner = wafMW
 	}
-	// ── Challenge dispatcher ──────────────────────────────────────────────
+
 	mux := http.NewServeMux()
 
 	c := cfg.Challenges
@@ -144,16 +139,14 @@ func main() {
 
 	mux.Handle("/", inner)
 
-	// ── Middleware chain (outermost → innermost) ──────────────────────────
-	//
-	//  reputationMW  — group scoring, pre-emptive ban, challenge escalation
-	//  metricsMW     — prometheus counters (wraps everything)
-	//    normMW      — path normalisation
-	//      rateMW    — per-IP rate limiting + blacklist
-	//        scraperMW — behaviour analysis (path ratio, timing, referer)
-	//          ja3MW   — JA4 fingerprint blocklist (header-only, nginx sets it)
-	//            antiBotMW — UA pattern matching
-	//              sessionMW — token validation / challenge dispatch
+	//  reputationMW  -> group scoring, pre-emptive ban, challenge escalation
+	//  metricsMW     -> prometheus counters (wraps everything)
+	//    normMW      -> path normalisation
+	//      rateMW    -> per-IP rate limiting + blacklist
+	//        scraperMW -> behaviour analysis (path ratio, timing, referer)
+	//          ja3MW   -> JA4 fingerprint blocklist (header-only, nginx sets it)
+	//            antiBotMW -> UA pattern matching
+	//              sessionMW -> token validation / challenge dispatch
 
 	sessionMW  := middleware.NewSession(mux, http.HandlerFunc(dispatcher.Dispatch), tokenMgr, cfg, policyEngine, log)
 	antiBotMW  := middleware.NoBot(sessionMW, cfg.AntiBot, policyEngine, log)
@@ -166,7 +159,6 @@ func main() {
 	metricsMW  := middleware.NewMetrics(repMW)
 	allowlistMW := middleware.NewAllowlist(metricsMW, cfg.Allowlist.Enabled, cfg.Allowlist.CIDRs, log)
 
-	// ── Metrics server ────────────────────────────────────────────────────
 	if cfg.Metrics.Enabled {
 		metricsSrv := &http.Server{
 			Addr:              cfg.Metrics.ListenAddr,
@@ -182,7 +174,6 @@ func main() {
 		}()
 	}
 
-	// ── Main server ───────────────────────────────────────────────────────
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           allowlistMW,

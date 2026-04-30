@@ -56,13 +56,12 @@ func (e *groupEntry) currentScore(halfLife time.Duration) float64 {
 	return e.RawScore * math.Pow(0.5, halvings)
 }
 
-// Store holds group reputation scores indexed by a string key that encodes
-// the group type and identity:
+// Store holds group reputation scores indexed by a string key that encodes the group type and identity:
 //
-//	"1.2.3.0/24"       — IPv4 /24 subnet
-//	"2001:db8::/48"    — IPv6 /48 subnet
-//	"AS15169"          — Autonomous System Number
-//	"fp:t13d..."       — JA4 fingerprint
+//	"1.2.3.0/24"       -> IPv4 /24 subnet
+//	"2001:db8::/48"    -> IPv6 /48 subnet
+//	"AS15169"          -> Autonomous System Number
+//	"fp:t13d..."       -> JA4 fingerprint
 type Store struct {
 	mu     sync.RWMutex
 	groups map[string]*groupEntry
@@ -70,8 +69,7 @@ type Store struct {
 	asn    *ASNLookup
 }
 
-// New creates a Store, loading any previously persisted state from
-// cfg.PersistFile. It opens the ASN database if cfg.ASNDBPath is set.
+// New creates a Store, loading any previously persisted state from cfg.PersistFile. It opens the ASN database if cfg.ASNDBPath is set.
 func New(cfg Config) (*Store, error) {
 	asn, err := NewASNLookup(cfg.ASNDBPath)
 	if err != nil {
@@ -89,11 +87,8 @@ func New(cfg Config) (*Store, error) {
 	return s, nil
 }
 
-// ── Public API ────────────────────────────────────────────────────────────────
-
-// GroupScore returns the combined, decayed group score for ip using the
-// given JA4 fingerprint.  The score is the maximum across all groups the
-// IP belongs to (subnet, fingerprint, ASN).
+// GroupScore returns the combined, decayed group score for ip using the given JA4 fingerprint.
+// The score is the maximum across all groups the IP belongs to (subnet, fingerprint, ASN).
 func (s *Store) GroupScore(ip, fingerprint string) float64 {
 	hl := s.halfLife()
 	s.mu.RLock()
@@ -113,9 +108,8 @@ func (s *Store) GroupScore(ip, fingerprint string) float64 {
 	return max
 }
 
-// RecordPenalty propagates a penalty (e.g. from a ban or challenge event)
-// to all groups the IP belongs to.  The full penalty applies to the IP's
-// /24 subnet; fingerprint and ASN receive weighted fractions.
+// RecordPenalty propagates a penalty (e.g. from a ban or challenge event) to all groups the IP belongs to.
+// The full penalty applies to the IP's /24 subnet; fingerprint and ASN receive weighted fractions.
 func (s *Store) RecordPenalty(ip, fingerprint string, penalty float64) {
 	hl := s.halfLife()
 	isBan := penalty >= 50
@@ -166,8 +160,6 @@ func (s *Store) Close() {
 	}
 }
 
-// ── Persistence ───────────────────────────────────────────────────────────────
-
 func (s *Store) save() error {
 	data, err := json.Marshal(s.groups)
 	if err != nil {
@@ -190,8 +182,6 @@ func (s *Store) load() error {
 	return json.Unmarshal(data, &s.groups)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
 // keysFor returns all group keys for ip + fingerprint.
 func (s *Store) keysFor(ip, fingerprint string) []string {
 	keys := []string{subnetKey(ip), fpKey(fingerprint)}
@@ -208,8 +198,7 @@ func (s *Store) halfLife() time.Duration {
 	return s.cfg.HalfLife
 }
 
-// cleanupLoop removes entries whose decayed score has fallen below 0.5
-// every 30 minutes to prevent unbounded memory growth.
+// cleanupLoop removes entries whose decayed score has fallen below 0.5 every 30 minutes to prevent unbounded memory growth.
 func (s *Store) cleanupLoop() {
 	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()

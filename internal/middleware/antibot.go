@@ -13,23 +13,11 @@ import (
 	"git.omada.cafe/atf/waf/internal/policy"
 )
 
-// builtinBadBotPatterns are unconditionally blocked regardless of crawler
-// policy.  These are scraping frameworks and AI content scrapers that have
-// no legitimate reason to hit a self-hosted webapp.
-//
-// IMPORTANT: generic HTTP libraries (Go, OkHttp, Java, curl) are NOT here.
-// Many legitimate apps use them (Nextcloud desktop = Go, DAVx5 = OkHttp,
-// Jellyfin Android = OkHttp, RSS readers = various).  If an operator wants
-// to block raw curl/wget, they add patterns to bad_bots.txt — not here,
-// because that would create false positives for other people deploying the
-// same WAF.
+// builtinBadBotPatterns are unconditionally blocked regardless of crawler policy. \
+// These are scraping frameworks and AI content scrapers that have no legitimate reason to hit a self-hosted webapp.
+
 var builtinBadBotPatterns = []string{
-	// AI content scrapers — high bandwidth, no value to the site
-	`(?i)(GPTBot|ChatGPT-User|CCBot|anthropic-ai|ClaudeBot|cohere-ai|PerplexityBot|YouBot|Bytespider|Google-Extended)`,
-	// SEO / link analysis crawlers — also high bandwidth, no user benefit
-	`(?i)(AhrefsBot|MJ12bot|DotBot|SemrushBot|BLEXBot|PetalBot|DataForSeoBot)`,
-	// Scraping frameworks — these are tools, not browsers or apps
-	`(?i)(scrapy|mechanize|libwww-perl|lwp-trivial)`,
+	`(?i)(GPTBot|ChatGPT-User|CCBot|anthropic-ai|ClaudeBot|cohere-ai|PerplexityBot|YouBot|Bytespider|Google-Extended|AhrefsBot|MJ12bot|DotBot|SemrushBot|BLEXBot|PetalBot|DataForSeoBot|scrapy|mechanize|libwww-perl|lwp-trivial)`
 }
 
 // searchEngineCrawlers are patterns for legitimate search engine crawlers.
@@ -53,8 +41,7 @@ type AntiBot struct {
 }
 
 // NoBot constructs the antibot middleware.
-// pol may be nil; if provided, requests matching challenge:"none" policies
-// skip all antibot checks.
+// pol may be nil; if provided, requests matching challenge:"none" policies skip all antibot checks.
 func NoBot(next http.Handler, cfg config.AntiBotConfig, pol *policy.Engine, log *slog.Logger) *AntiBot {
 	g := &AntiBot{next: next, cfg: cfg, pol: pol, log: log}
 	g.patterns = compilePatterns(builtinBadBotPatterns)

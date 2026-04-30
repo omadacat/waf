@@ -13,15 +13,6 @@ import (
 	"git.omada.cafe/atf/waf/internal/tlsfp"
 )
 
-// JA3Check fingerprints TLS ClientHellos via JA4 and blocks requests from
-// known automated clients.
-//
-// Fingerprint source priority (first non-empty wins):
-//  1. X-JA4-Hash request header set by an upstream proxy (nginx + OpenResty).
-//  2. tlsfp.Listener native map when the WAF terminates TLS directly.
-//
-// When neither source is available (plain HTTP, no upstream header, no native
-// TLS) the middleware is a no-op: the request passes through unchanged.
 type JA3Check struct {
 	next     http.Handler
 	cfg      config.JA3Config
@@ -31,10 +22,6 @@ type JA3Check struct {
 	blocklist map[string]string // built-ins + operator entries
 }
 
-// NewJA3Check constructs the middleware.
-//   - listener must be a concrete *tlsfp.Listener or nil — never a
-//     nil pointer wrapped in an interface (that would defeat the nil check).
-//   - banMgr may be nil.
 func NewJA3Check(next http.Handler, cfg config.JA3Config, banMgr *bans.BanManager, log *slog.Logger) *JA3Check {
 	m := &JA3Check{
 		next:      next,
@@ -67,8 +54,6 @@ func (j *JA3Check) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	hash := j.resolveHash(r)
 	if hash == "" {
-		// No fingerprint available — nginx handles TLS and no header was set,
-		// or this is plain HTTP. Pass through without penalty.
 		j.next.ServeHTTP(w, r)
 		return
 	}
@@ -92,9 +77,8 @@ func (j *JA3Check) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	j.next.ServeHTTP(w, r)
 }
 
-// resolveHash returns the JA4 fingerprint for this request, or "" if none is
-// available.  It uses concrete-type nil checks so a nil *tlsfp.Listener never
-// panics.
+// resolveHash returns the JA4 fingerprint for this request, or "" if none is available.
+// It uses concrete-type nil checks so a nil *tlsfp.Listener never panics.
 func (j *JA3Check) resolveHash(r *http.Request) string {
 	// 1. Header from trusted upstream proxy.
 	if h := r.Header.Get("X-JA4-Hash"); h != "" {

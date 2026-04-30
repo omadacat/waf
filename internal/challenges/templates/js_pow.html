@@ -1,217 +1,376 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<meta name="theme-color" content="#328c60">
-<meta name="robots" content="noindex,nofollow">
-<link rel="icon" href="/favicon.ico">
-<title>Checking your browser — {{.Host}}</title>
-<style>
-*{margin:0;padding:0}
-html{width:100%;background:#fff;color:#000;font-family:"Noto Serif","Source Serif",Times New Roman,Times,serif;line-height:1.75}
-body,html{min-height:100vh}
-body{display:flex;margin:0 auto;max-width:83vw;flex-wrap:wrap;flex-direction:column;justify-content:space-between}
-header{margin:10vh 0 0;padding-bottom:1em;border-bottom:5px solid #328c60}
-header a{font-size:1.5em;font-weight:bold;color:#000;text-decoration:none}
-main{background:#f8faf9;border-radius:8px;box-shadow:0 2px 8px rgba(50,140,96,.1);padding:2.5rem;margin-top:2rem;margin-bottom:2rem;display:flex;flex-direction:row;gap:2rem;align-items:flex-start}
-.main-text{flex:1}
-.mascot{width:96px;height:96px;flex-shrink:0;image-rendering:pixelated;align-self:center}
-main h1{font-size:2rem;color:#2d7353;line-height:1.3;border-bottom:2px solid #e0efe8;padding-bottom:1rem;margin-bottom:1.5rem}
-main h1 em{color:#4a9b78;font-size:1rem;font-style:normal}
-main p{margin:1.2rem 0;color:#3a3a3a;line-height:1.8}
-.prog{font-family:monospace;color:#4a9b78;font-size:.9em;margin-top:.5rem}
-.bar-wrap{background:#e0efe8;border-radius:99px;height:6px;margin-top:1rem;overflow:hidden;display:none}
-.bar-inner{background:#328c60;height:100%;width:0;transition:width .3s ease;border-radius:99px}
-a{transition:all .2s ease;color:#36c;text-decoration:none}
-em,footer{color:#777;font-style:normal}
-footer{margin:0 0 10vh;padding-top:1em;border-top:1px solid #eaecf0;font-size:.9em}
-.footer-links a{margin-right:.5em;white-space:nowrap}
-noscript p{color:#c0392b;margin-top:1rem}
-@media(max-width:768px){main{padding:1.5rem;flex-direction:column}main h1{font-size:1.6rem}.mascot{width:64px;height:64px;align-self:flex-start}}
-@media(prefers-color-scheme:dark){html{background:#121212;color:#e0e0e0}header{border-bottom-color:#2d7353}header a{color:#e0e0e0}main{background:#1e1e1e;box-shadow:0 2px 8px rgba(0,0,0,.5)}main h1{color:#6bc29a;border-bottom-color:#2d3833}main h1 em{color:#8fd4b0}main p{color:#ccc}.prog{color:#8fd4b0}.bar-wrap{background:#2d3833}.bar-inner{background:#6bc29a}em,footer{color:#aaa}footer{border-top-color:#333}}
-</style>
-</head>
-<body>
-<header><a href="/">{{.Host}}</a></header>
-<main>
-  <img class="mascot" src="{{.BasePath}}/static/img/neofox_laptop.png" alt="" aria-hidden="true">
-  <div class="main-text">
-    <h1>Just a moment… <em>(JS challenge)</em></h1>
-    <p>Your browser is completing a brief proof-of-work. This finishes automatically.</p>
-    <p class="prog" id="prog">Starting workers…</p>
-    <div class="bar-wrap" id="bar-wrap"><div class="bar-inner" id="bar"></div></div>
-    <noscript><p>JavaScript is disabled. <a href="{{.BasePath}}/css?redirect={{.RedirectEnc}}">Switch to the no-JS challenge.</a></p></noscript>
-  </div>
-</main>
-<footer>
-  <div class="footer-links">
-    <a href="/">Home</a>
-    <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a>
-  </div>
-</footer>
-<script>
-"use strict";
-(function() {
-  var NONCE      = {{.Nonce}};
-  var DIFFICULTY = {{.Difficulty}};
-  var REDIRECT   = {{.Redirect}};
-  var BASE       = {{.BasePath}};
-  var MIN_MS     = 800;
-  var LS_KEY     = '_waf_solved';
-
-  var prog    = document.getElementById('prog');
-  var barWrap = document.getElementById('bar-wrap');
-  var bar     = document.getElementById('bar');
-
-  // ── Tab sharing: if another tab just solved, we'll have the cookie too ──
-  // Listen before we start working so we don't miss the event.
-  try {
-    window.addEventListener('storage', function(e) {
-      if (e.key === LS_KEY && e.newValue) {
-        // Give the sibling tab's fetch ~600ms to land and the cookie to be set.
-        setTimeout(function() { window.location.href = REDIRECT; }, 600);
-      }
-    });
-  } catch(e) {}
-
-  // If this tab already has a valid token (from a previous solve or another tab),
-  // skip the challenge immediately.
-  if (document.cookie.indexOf('_waf_tok=') !== -1) {
-    window.location.href = REDIRECT;
-    return;
-  }
-
-  barWrap.style.display = 'block';
-
-  // ── Inline Web Worker ──────────────────────────────────────────────────
-  // Runs SHA-256 on a background thread so the UI stays responsive and the
-  // progress bar actually updates.  Created via Blob URL so no static file
-  // is required.
-  var workerSrc = [
-    'var enc = new TextEncoder();',
-    'async function h(m){',
-    '  var b=await crypto.subtle.digest("SHA-256",enc.encode(m));',
-    '  return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,"0")}).join("");',
-    '}',
-    'function z(hex){',
-    '  var b=0;',
-    '  for(var i=0;i<hex.length;i++){',
-    '    var n=parseInt(hex[i],16);',
-    '    if(n===0){b+=4;}else{if(n<2)b+=3;else if(n<4)b+=2;else if(n<8)b+=1;break;}',
-    '  }',
-    '  return b;',
-    '}',
-    'onmessage=async function(e){',
-    '  var data=e.data.data,diff=e.data.difficulty,threads=e.data.threads,c=e.data.start;',
-    '  var iters=0;',
-    '  while(true){',
-    '    for(var j=0;j<500;j++,c+=threads){',
-    '      if(z(await h(data+String(c)))>=diff){postMessage({found:true,counter:c});return;}',
-    '    }',
-    '    iters+=500;',
-    '    postMessage({found:false,counter:c,iters:iters});',
-    '  }',
-    '};'
-  ].join('\n');
-
-  var blobURL = URL.createObjectURL(new Blob([workerSrc], {type:'application/javascript'}));
-
-  // Half the logical cores, min 1, max 4 — leave headroom for other tabs.
-  var threads = Math.min(4, Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
-  var workers = [], solved = false;
-  var startTime = Date.now();
-  var totalIters = 0;
-  var estimated = Math.pow(2, DIFFICULTY);
-
-  prog.textContent = 'Running ' + threads + ' worker' + (threads > 1 ? 's' : '') + '…';
-
-  function submit(counter) {
-    workers.forEach(function(w){w.terminate();});
-    URL.revokeObjectURL(blobURL);
-    var elapsedMs = Date.now() - startTime;
-    var wait = Math.max(0, MIN_MS - elapsedMs);
-
-    setTimeout(function() {
-      prog.textContent = 'Verified — redirecting…';
-      bar.style.width = '100%';
-
-      // Use fetch so we can signal localStorage AFTER the cookie is confirmed set.
-      fetch(BASE + '/verify-js', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({
-          nonce:       NONCE,
-          answer:      String(counter),
-          redirect:    REDIRECT,
-          elapsedTime: String(elapsedMs + wait)
-        })
-      }).then(function(res) {
-        // Cookie is now set in the browser (server sent Set-Cookie in the 302).
-        // Signal other open tabs before navigating so they can skip their challenge.
-        try { localStorage.setItem(LS_KEY, Date.now()); } catch(e) {}
-        window.location.href = res.redirected ? res.url : REDIRECT;
-      }).catch(function() {
-        prog.textContent = 'Network error — reloading…';
-        setTimeout(function() { window.location.reload(); }, 2000);
-      });
-    }, wait);
-  }
-
-  function progress(iters, counter) {
-    totalIters += iters;
-    var pct = Math.min(99, Math.round(totalIters / estimated * 100));
-    bar.style.width = pct + '%';
-    prog.textContent = 'Checked ' + totalIters.toLocaleString() + ' candidates… (' + pct + '%)';
-  }
-
-  for (var i = 0; i < threads; i++) {
-    (function(idx) {
-      var w = new Worker(blobURL);
-      workers.push(w);
-      w.onmessage = function(e) {
-        if (solved) return;
-        if (e.data.found) { solved = true; submit(e.data.counter); }
-        else { progress(e.data.iters || 0, e.data.counter); }
-      };
-      w.onerror = function() {
-        if (!solved) { fallback(); }
-      };
-      w.postMessage({data: NONCE, difficulty: DIFFICULTY, threads: threads, start: idx});
-    })(i);
-  }
-
-  // Single-threaded fallback when Workers are unavailable.
-  function fallback() {
-    workers.forEach(function(w){try{w.terminate();}catch(e){}});
-    prog.textContent = 'Falling back to main thread…';
-    var c = 0;
-    var enc = new TextEncoder();
-    function step() {
-      var batch = 2000, found = false;
-      (function loop() {
-        if (!found && batch-- > 0) {
-          crypto.subtle.digest('SHA-256', enc.encode(NONCE + String(c))).then(function(buf) {
-            var hex = Array.from(new Uint8Array(buf)).map(function(x){return x.toString(16).padStart(2,'0');}).join('');
-            var b = 0;
-            for (var i = 0; i < hex.length; i++) {
-              var n = parseInt(hex[i],16);
-              if(n===0){b+=4;}else{if(n<2)b+=3;else if(n<4)b+=2;else if(n<8)b+=1;break;}
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+        <meta name="theme-color" content="#328c60" />
+        <meta name="robots" content="noindex,nofollow" />
+        <link rel="icon" href="/favicon.ico" />
+        <title>Checking your browser : {{.Host}}</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
             }
-            if (b >= DIFFICULTY) { found = true; submit(c); return; }
-            c++; loop();
-          });
-        } else if (!found) {
-          prog.textContent = 'Checked ' + c.toLocaleString() + ' candidates…';
-          setTimeout(step, 0);
-        }
-      })();
-    }
-    step();
-  }
+            html {
+                width: 100%;
+                background: #fff;
+                color: #000;
+                font-family:
+                    "Noto Serif",
+                    "Source Serif",
+                    Times New Roman,
+                    Times,
+                    serif;
+                line-height: 1.75;
+            }
+            body,
+            html {
+                min-height: 100vh;
+            }
+            body {
+                display: flex;
+                margin: 0 auto;
+                max-width: 83vw;
+                flex-wrap: wrap;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+            header {
+                margin: 10vh 0 0;
+                padding-bottom: 1em;
+                border-bottom: 5px solid #328c60;
+            }
+            header a {
+                font-size: 1.5em;
+                font-weight: bold;
+                color: #000;
+                text-decoration: none;
+            }
+            main {
+                background: #f8faf9;
+                border-radius: 8px;
+                box-shadow: 0 2px 8px rgba(50, 140, 96, 0.1);
+                padding: 2.5rem;
+                margin-top: 2rem;
+                margin-bottom: 2rem;
+                display: flex;
+                flex-direction: row;
+                gap: 2rem;
+                align-items: flex-start;
+            }
+            .main-text {
+                flex: 1;
+            }
+            .mascot {
+                width: 96px;
+                height: 96px;
+                flex-shrink: 0;
+                image-rendering: pixelated;
+                align-self: center;
+            }
+            main h1 {
+                font-size: 2rem;
+                color: #2d7353;
+                line-height: 1.3;
+                border-bottom: 2px solid #e0efe8;
+                padding-bottom: 1rem;
+                margin-bottom: 1.5rem;
+            }
+            main h1 em {
+                color: #4a9b78;
+                font-size: 1rem;
+                font-style: normal;
+            }
+            main p {
+                margin: 1.2rem 0;
+                color: #3a3a3a;
+                line-height: 1.8;
+            }
+            .prog {
+                font-family: monospace;
+                color: #4a9b78;
+                font-size: 0.9em;
+                margin-top: 0.5rem;
+            }
+            .bar-wrap {
+                background: #e0efe8;
+                border-radius: 99px;
+                height: 6px;
+                margin-top: 1rem;
+                overflow: hidden;
+                display: none;
+            }
+            .bar-inner {
+                background: #328c60;
+                height: 100%;
+                width: 0;
+                transition: width 0.3s ease;
+                border-radius: 99px;
+            }
+            a {
+                transition: all 0.2s ease;
+                color: #36c;
+                text-decoration: none;
+            }
+            em,
+            footer {
+                color: #777;
+                font-style: normal;
+            }
+            footer {
+                margin: 0 0 10vh;
+                padding-top: 1em;
+                border-top: 1px solid #eaecf0;
+                font-size: 0.9em;
+            }
+            .footer-links a {
+                margin-right: 0.5em;
+                white-space: nowrap;
+            }
+            noscript p {
+                color: #c0392b;
+                margin-top: 1rem;
+            }
+            @media (max-width: 768px) {
+                main {
+                    padding: 1.5rem;
+                    flex-direction: column;
+                }
+                main h1 {
+                    font-size: 1.6rem;
+                }
+                .mascot {
+                    width: 64px;
+                    height: 64px;
+                    align-self: flex-start;
+                }
+            }
+            @media (prefers-color-scheme: dark) {
+                html {
+                    background: #121212;
+                    color: #e0e0e0;
+                }
+                header {
+                    border-bottom-color: #2d7353;
+                }
+                header a {
+                    color: #e0e0e0;
+                }
+                main {
+                    background: #1e1e1e;
+                    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+                }
+                main h1 {
+                    color: #6bc29a;
+                    border-bottom-color: #2d3833;
+                }
+                main h1 em {
+                    color: #8fd4b0;
+                }
+                main p {
+                    color: #ccc;
+                }
+                .prog {
+                    color: #8fd4b0;
+                }
+                .bar-wrap {
+                    background: #2d3833;
+                }
+                .bar-inner {
+                    background: #6bc29a;
+                }
+                em,
+                footer {
+                    color: #aaa;
+                }
+                footer {
+                    border-top-color: #333;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <header><a href="/">{{.Host}}</a></header>
+        <main>
+            <img
+                class="mascot"
+                src="{{.BasePath}}/static/img/neofox_laptop.png"
+                alt=""
+                aria-hidden="true"
+            />
+            <div class="main-text">
+                <h1>Just a moment… <em>(JS challenge)</em></h1>
+                <p>
+                    Your browser is completing a brief proof-of-work. This
+                    finishes automatically.
+                </p>
+                <p class="prog" id="prog">Starting workers…</p>
+                <div class="bar-wrap" id="bar-wrap">
+                    <div class="bar-inner" id="bar"></div>
+                </div>
+                <noscript
+                    ><p>
+                        JavaScript is disabled.
+                        <a href="{{.BasePath}}/css?redirect={{.RedirectEnc}}"
+                            >Switch to the no-JS challenge.</a
+                        >
+                    </p></noscript
+                >
+            </div>
+        </main>
+        <footer>
+            <div class="footer-links">
+                <a href="/">Home</a>
+                <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a>
+            </div>
+        </footer>
+        <script>
+            "use strict";
+            (function() {
+              var NONCE      = {{.Nonce}};
+              var DIFFICULTY = {{.Difficulty}};
+              var REDIRECT   = {{.Redirect}};
+              var BASE       = {{.BasePath}};
+              var MIN_MS     = 800;
+              var LS_KEY     = '_waf_solved';
 
-  if (typeof Worker === 'undefined') { fallback(); }
-})();
-</script>
-</body>
+              var prog    = document.getElementById('prog');
+              var barWrap = document.getElementById('bar-wrap');
+              var bar     = document.getElementById('bar');
+              try {
+                window.addEventListener('storage', function(e) {
+                  if (e.key === LS_KEY && e.newValue) {
+                    setTimeout(function() { window.location.href = REDIRECT; }, 600);
+                  }
+                });
+              } catch(e) {}
+
+              if (document.cookie.indexOf('_waf_tok=') !== -1) {
+                window.location.href = REDIRECT;
+                return;
+              }
+
+              barWrap.style.display = 'block';
+
+              var workerSrc = [
+                'var enc = new TextEncoder();',
+                'async function h(m){',
+                '  var b=await crypto.subtle.digest("SHA-256",enc.encode(m));',
+                '  return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,"0")}).join("");',
+                '}',
+                'function z(hex){',
+                '  var b=0;',
+                '  for(var i=0;i<hex.length;i++){',
+                '    var n=parseInt(hex[i],16);',
+                '    if(n===0){b+=4;}else{if(n<2)b+=3;else if(n<4)b+=2;else if(n<8)b+=1;break;}',
+                '  }',
+                '  return b;',
+                '}',
+                'onmessage=async function(e){',
+                '  var data=e.data.data,diff=e.data.difficulty,threads=e.data.threads,c=e.data.start;',
+                '  var iters=0;',
+                '  while(true){',
+                '    for(var j=0;j<500;j++,c+=threads){',
+                '      if(z(await h(data+String(c)))>=diff){postMessage({found:true,counter:c});return;}',
+                '    }',
+                '    iters+=500;',
+                '    postMessage({found:false,counter:c,iters:iters});',
+                '  }',
+                '};'
+              ].join('\n');
+
+              var blobURL = URL.createObjectURL(new Blob([workerSrc], {type:'application/javascript'}));
+              var threads = Math.min(4, Math.max(1, Math.floor((navigator.hardwareConcurrency || 2) / 2)));
+              var workers = [], solved = false;
+              var startTime = Date.now();
+              var totalIters = 0;
+              var estimated = Math.pow(2, DIFFICULTY);
+
+              prog.textContent = 'Running ' + threads + ' worker' + (threads > 1 ? 's' : '') + '…';
+
+              function submit(counter) {
+                workers.forEach(function(w){w.terminate();});
+                URL.revokeObjectURL(blobURL);
+                var elapsedMs = Date.now() - startTime;
+                var wait = Math.max(0, MIN_MS - elapsedMs);
+                setTimeout(function() {
+                  prog.textContent = 'Verified! redirecting... :3';
+                  bar.style.width = '100%';
+
+                  // Use fetch so we can signal localStorage AFTER the cookie is confirmed set.
+                  fetch(BASE + '/verify-js', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({
+                      nonce:       NONCE,
+                      answer:      String(counter),
+                      redirect:    REDIRECT,
+                      elapsedTime: String(elapsedMs + wait)
+                    })
+                  }).then(function(res) {
+                    try { localStorage.setItem(LS_KEY, Date.now()); } catch(e) {}
+                    window.location.href = res.redirected ? res.url : REDIRECT;
+                  }).catch(function() {
+                    prog.textContent = 'Network error — reloading…';
+                    setTimeout(function() { window.location.reload(); }, 2000);
+                  });
+                }, wait);
+              }
+
+              function progress(iters, counter) {
+                totalIters += iters;
+                var pct = Math.min(99, Math.round(totalIters / estimated * 100));
+                bar.style.width = pct + '%';
+                prog.textContent = 'Checked ' + totalIters.toLocaleString() + ' candidates… (' + pct + '%)';
+              }
+
+              for (var i = 0; i < threads; i++) {
+                (function(idx) {
+                  var w = new Worker(blobURL);
+                  workers.push(w);
+                  w.onmessage = function(e) {
+                    if (solved) return;
+                    if (e.data.found) { solved = true; submit(e.data.counter); }
+                    else { progress(e.data.iters || 0, e.data.counter); }
+                  };
+                  w.onerror = function() {
+                    if (!solved) { fallback(); }
+                  };
+                  w.postMessage({data: NONCE, difficulty: DIFFICULTY, threads: threads, start: idx});
+                })(i);
+              }
+
+              function fallback() {
+                workers.forEach(function(w){try{w.terminate();}catch(e){}});
+                prog.textContent = 'Falling back to main thread…';
+                var c = 0;
+                var enc = new TextEncoder();
+                function step() {
+                  var batch = 2000, found = false;
+                  (function loop() {
+                    if (!found && batch-- > 0) {
+                      crypto.subtle.digest('SHA-256', enc.encode(NONCE + String(c))).then(function(buf) {
+                        var hex = Array.from(new Uint8Array(buf)).map(function(x){return x.toString(16).padStart(2,'0');}).join('');
+                        var b = 0;
+                        for (var i = 0; i < hex.length; i++) {
+                          var n = parseInt(hex[i],16);
+                          if(n===0){b+=4;}else{if(n<2)b+=3;else if(n<4)b+=2;else if(n<8)b+=1;break;}
+                        }
+                        if (b >= DIFFICULTY) { found = true; submit(c); return; }
+                        c++; loop();
+                      });
+                    } else if (!found) {
+                      prog.textContent = 'Checked ' + c.toLocaleString() + ' candidates…';
+                      setTimeout(step, 0);
+                    }
+                  })();
+                }
+                step();
+              }
+
+              if (typeof Worker === 'undefined') { fallback(); }
+            })();
+        </script>
+    </body>
 </html>

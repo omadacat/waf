@@ -5,18 +5,7 @@ import (
 	"sync"
 )
 
-// datacenterCIDRs covers major cloud / hosting providers whose exit IPs
-// should receive the heavier scrypt challenge rather than the lighter JS PoW.
-//
-// Ranges are intentionally conservative — we only include netblocks that are
-// exclusively used for server/compute workloads, not residential transit.
-//
-// Sources: AWS ip-ranges.json, GCP goog.json, Azure ServiceTags,
-// Hetzner RIPE, DigitalOcean, OVH, Vultr, Linode/Akamai (spot-checked).
-//
-// Refresh these periodically; cloud providers rotate allocations.
 var datacenterCIDRStrings = []string{
-	// ── AWS ──────────────────────────────────────────────────────────────
 	"3.0.0.0/8",
 	"13.32.0.0/12",
 	"13.48.0.0/14",
@@ -37,8 +26,6 @@ var datacenterCIDRStrings = []string{
 	"44.192.0.0/11",
 	"52.0.0.0/8",
 	"54.0.0.0/8",
-
-	// ── Google Cloud ─────────────────────────────────────────────────────
 	"34.0.0.0/10",
 	"34.64.0.0/11",
 	"34.96.0.0/11",
@@ -53,8 +40,6 @@ var datacenterCIDRStrings = []string{
 	"104.196.0.0/14",
 	"130.211.0.0/22",
 	"146.148.0.0/17",
-
-	// ── Microsoft Azure ──────────────────────────────────────────────────
 	"13.64.0.0/11",
 	"20.0.0.0/6", // very broad but Azure owns this range
 	"23.96.0.0/13",
@@ -65,8 +50,6 @@ var datacenterCIDRStrings = []string{
 	"52.120.0.0/13",
 	"104.40.0.0/13",
 	"104.208.0.0/13",
-
-	// ── Hetzner ──────────────────────────────────────────────────────────
 	"5.9.0.0/16",
 	"23.88.0.0/17",
 	"49.12.0.0/16",
@@ -96,8 +79,6 @@ var datacenterCIDRStrings = []string{
 	"193.148.0.0/17",
 	"195.201.0.0/16",
 	"213.133.96.0/19",
-
-	// ── DigitalOcean ─────────────────────────────────────────────────────
 	"45.55.0.0/16",
 	"67.205.0.0/16",
 	"104.131.0.0/16",
@@ -131,8 +112,6 @@ var datacenterCIDRStrings = []string{
 	"206.81.0.0/18",
 	"207.154.192.0/18",
 	"209.97.128.0/17",
-
-	// ── OVH / OVHcloud ───────────────────────────────────────────────────
 	"5.135.0.0/16",
 	"51.68.0.0/16",
 	"51.75.0.0/16",
@@ -159,8 +138,6 @@ var datacenterCIDRStrings = []string{
 	"192.95.0.0/18",
 	"198.27.64.0/18",
 	"213.186.32.0/19",
-
-	// ── Vultr ────────────────────────────────────────────────────────────
 	"64.176.0.0/17",
 	"66.42.0.0/18",
 	"79.110.128.0/18",
@@ -177,8 +154,6 @@ var datacenterCIDRStrings = []string{
 	"192.248.152.0/22",
 	"207.246.96.0/19",
 	"216.128.128.0/17",
-
-	// ── Linode / Akamai Cloud ─────────────────────────────────────────────
 	"45.33.0.0/17",
 	"45.56.64.0/18",
 	"45.79.0.0/17",
@@ -191,13 +166,9 @@ var datacenterCIDRStrings = []string{
 	"178.79.128.0/18",
 	"194.195.112.0/20",
 	"194.195.120.0/21",
-
-	// ── Cloudflare (compute, not CDN edge) ───────────────────────────────
 	"198.41.128.0/17",
 	"104.16.0.0/13",
 	"104.24.0.0/14",
-
-	// ── Oracle Cloud ─────────────────────────────────────────────────────
 	"129.146.0.0/16",
 	"129.148.0.0/16",
 	"130.35.0.0/16",
@@ -211,8 +182,6 @@ var datacenterCIDRStrings = []string{
 	"152.69.0.0/16",
 	"168.138.0.0/16",
 	"193.122.0.0/16",
-
-	// ── Fastly ───────────────────────────────────────────────────────────
 	"23.235.32.0/20",
 	"43.249.72.0/22",
 	"103.244.50.0/24",
@@ -240,7 +209,6 @@ func initDatacenterNets() {
 			}
 		}
 	})
-}
 
 // IsDatacenterIP returns true if ip belongs to a known cloud / hosting
 // provider range. Thread-safe after the first call triggers initialisation.
