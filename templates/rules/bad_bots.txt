@@ -1,62 +1,45 @@
 # Bad Bot User-Agent Patterns
-# These supplement the built-in patterns in antibot.go.
+#
+# Loaded at runtime from bot_ua_list_file config.  Supplements the
+# built-in patterns in antibot.go (AI scrapers, SEO crawlers, scraping
+# frameworks).
+#
+# One regex per line.  Lines starting with # are ignored.
 
-# AI Scrapers
-(?i)GPTBot
-(?i)ChatGPT-User
-(?i)CCBot
-(?i)anthropic-ai
-(?i)ClaudeBot
-(?i)cohere-ai
-(?i)PerplexityBot
-(?i)YouBot
-(?i)Bytespider
+# ── AI scrapers ───────────────────────────────────────────────────────────
 (?i)Amazonbot
 (?i)Applebot-Extended
-(?i)DataForSeoBot
+(?i)Google-Extended
 (?i)ImagesiftBot
 (?i)OmgiliBot
-(?i)FacebookBot
 (?i)Diffbot
 (?i)Timpibot
 (?i)VelenPublicWebCrawler
+(?i)Meta-ExternalAgent
+(?i)Meta-ExternalFetcher
 
-# SEO / Link Analysis Bots 
-(?i)AhrefsBot
-(?i)MJ12bot
-(?i)DotBot
-(?i)SemrushBot
-(?i)BLEXBot
-(?i)PetalBot
-(?i)BingPreview
-(?i)Sogou
-(?i)YandexBot
-(?i)BaiduSpider
-(?i)360Spider
-
-# Generic Scrapers / Libraries 
-(?i)^python-requests
-(?i)^python-urllib
-(?i)^go-http-client
-(?i)^Java\/
-(?i)^okhttp
-(?i)^Apache-HttpClient
-(?i)^libwww-perl
-(?i)^lwp-trivial
-(?i)^curl\/
-(?i)^wget\/
-(?i)^Scrapy
-(?i)^mechanize
-(?i)^aiohttp
-(?i)^httpx
-(?i)HeadlessChrome
-(?i)PhantomJS
-
-# Security Scanners 
-(?i)nikto
+# ── Vulnerability scanners ────────────────────────────────────────────────
+(?i)Nikto
 (?i)sqlmap
-(?i)masscan
 (?i)nuclei
 (?i)dirbuster
 (?i)gobuster
+(?i)ffuf
 (?i)wfuzz
+(?i)Acunetix
+(?i)Nessus
+(?i)ZmEu
+(?i)Zgrab
+
+# ── Optional: generic HTTP libraries ──────────────────────────────────────
+# WARNING: uncomment these ONLY if no service behind your WAF uses them.
+# Nextcloud desktop = Go-http-client, DAVx5/Jellyfin Android = OkHttp,
+# many RSS readers use python-requests or curl.
+# (?i)^curl/
+# (?i)Wget
+# (?i)python-requests
+# (?i)python-httpx
+# (?i)^Go-http-client
+# (?i)^okhttp
+# (?i)^Java/
+# (?i)Apache-HttpClient

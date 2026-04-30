@@ -3,6 +3,7 @@ package challenges
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ func (h *JSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // String fields in <script> context are automatically JSON-encoded by
 // html/template so no manual escaping is needed.
 type jsTemplateData struct {
+	Host        string // actual hostname the visitor navigated to
 	BasePath    string
 	Nonce       string
 	Difficulty  int
@@ -66,6 +68,7 @@ func (h *JSHandler) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	data := jsTemplateData{
+		Host:        cleanHost(r),
 		BasePath:    h.basePath,
 		Nonce:       nonce,
 		Difficulty:  h.difficulty,
@@ -101,6 +104,19 @@ func (h *JSHandler) verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.store.Delete("js:" + nonce)
+
+	// Reject solutions that arrived suspiciously fast.
+	// No real browser can render the page, spin up workers, and solve
+	// difficulty=20 in under 300 ms.  Bots that solve instantly are caught here.
+	if elapsedStr := r.FormValue("elapsedTime"); elapsedStr != "" {
+		if ms, err := strconv.ParseInt(elapsedStr, 10, 64); err == nil && ms < 300 {
+			h.log.Warn("js: solution too fast — likely bot", "ip", ip, "elapsed_ms", ms)
+			errorpage.Write(w, http.StatusForbidden)
+			return
+		} else if err == nil {
+			h.log.Debug("js: solution timing", "ip", ip, "elapsed_ms", ms)
+		}
+	}
 
 	hash := sha256Sum([]byte(nonce + answer))
 	if !meetsHashDifficulty(hash[:], h.difficulty) {

@@ -2,12 +2,10 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,12 +14,14 @@ import (
 	"time"
 
 	"git.omada.cafe/atf/waf/internal/bans"
+	"git.omada.cafe/atf/waf/internal/dnsbl"
+	"git.omada.cafe/atf/waf/internal/policy"
 	"git.omada.cafe/atf/waf/internal/challenges"
 	"git.omada.cafe/atf/waf/internal/config"
-	"git.omada.cafe/atf/waf/internal/tlsfp"
 	"git.omada.cafe/atf/waf/internal/logger"
 	"git.omada.cafe/atf/waf/internal/middleware"
 	"git.omada.cafe/atf/waf/internal/proxy"
+	"git.omada.cafe/atf/waf/internal/reputation"
 	"git.omada.cafe/atf/waf/internal/store"
 	"git.omada.cafe/atf/waf/internal/token"
 	"git.omada.cafe/atf/waf/internal/waf"
@@ -60,39 +60,51 @@ func main() {
 		log.Info("ban manager ready", "persist", cfg.Bans.PersistFile)
 	}
 
-	// ── JA4 / TLS listener setup ────────────────────────────────────────
-	// Set up before building the middleware chain so ja3Listener is
-	// non-nil when passed to NewJA3Check in native TLS mode.
-	// In the nginx-fronted case (no tls: config) it stays nil and the
-	// middleware falls back to the X-JA4-Hash header nginx sets.
-	var tlsfpListener *tlsfp.Listener
-	var tlsListener net.Listener // non-nil only in native TLS mode
-
-	if cfg.TLS.Enabled() {
-		tcpLn, err := net.Listen("tcp", cfg.ListenAddr)
-		if err != nil {
-			log.Error("tls: cannot bind", "addr", cfg.ListenAddr, "err", err)
-			os.Exit(1)
-		}
-		tlsfpListener = tlsfp.NewListener(tcpLn)
-		tlsCert, err := tls.LoadX509KeyPair(cfg.TLS.CertFile, cfg.TLS.KeyFile)
-		if err != nil {
-			log.Error("tls: cannot load key pair", "err", err)
-			os.Exit(1)
-		}
-		tlsListener = tls.NewListener(tlsfpListener, &tls.Config{
-			Certificates: []tls.Certificate{tlsCert},
-			MinVersion:   tls.VersionTLS12,
-		})
-		log.Info("native TLS enabled", "cert", cfg.TLS.CertFile)
+	// ── Reputation store ──────────────────────────────────────────────────
+	repCfg := reputation.Config{
+		Enabled:                cfg.Reputation.Enabled,
+		PersistFile:            cfg.Reputation.PersistFile,
+		ASNDBPath:              cfg.Reputation.ASNDBPath,
+		SubnetPropagation:      cfg.Reputation.SubnetPropagation,
+		FingerprintPropagation: cfg.Reputation.FingerprintPropagation,
+		ASNPropagation:         cfg.Reputation.ASNPropagation,
+		ChallengeThreshold:     cfg.Reputation.ChallengeThreshold,
+		BanThreshold:           cfg.Reputation.BanThreshold,
+		BanDuration:            cfg.Reputation.BanDuration.Duration,
+		HalfLife:               cfg.Reputation.HalfLife.Duration,
 	}
+	repStore, err := reputation.New(repCfg)
+	if err != nil {
+		log.Error("reputation store init failed", "err", err)
+		os.Exit(1)
+	}
+	defer repStore.Close()
 
+	// ── DNSBL checker ────────────────────────────────────────────────────
+	dnsblChecker := dnsbl.New(cfg.DNSBL.Zones, cfg.DNSBL.TTL.Duration, log)
+
+	// ── Policy engine ─────────────────────────────────────────────────────
+	var policyRules []policy.Rule
+	for _, r := range cfg.Policies {
+		policyRules = append(policyRules, policy.Rule{
+			Name:      r.Name,
+			Hosts:     r.Hosts,
+			Paths:     r.Paths,
+			Challenge: r.Challenge,
+			SkipWAF:   r.SkipWAF,
+		})
+	}
+	policyEngine := policy.New(policyRules)
+
+
+	// ── Proxy router ──────────────────────────────────────────────────────
 	router, err := proxy.New(cfg.Backends, log)
 	if err != nil {
 		log.Error("failed to initialise proxy router", "err", err)
 		os.Exit(1)
 	}
 
+	// ── Inner handler stack (WAF rules → auth) ────────────────────────────
 	var inner http.Handler = router
 	if cfg.WAF.Enabled {
 		engine, err := waf.New(cfg.WAF.Regex.RulesFile, log)
@@ -101,22 +113,19 @@ func main() {
 			os.Exit(1)
 		}
 		wafMW := waf.NewMiddleware(engine, router, cfg, log)
+		wafMW.WithPolicy(policyEngine)
 		if banMgr != nil {
 			wafMW.WithBanManager(banMgr, cfg.Bans.DefaultDuration.Duration)
 		}
 		inner = wafMW
 	}
-
-	if cfg.Auth.Enabled {
-		inner = middleware.NewBasicAuth(inner, cfg.Auth, log)
-		log.Info("basic auth enabled", "paths", len(cfg.Auth.Paths))
-	}
-
+	// ── Challenge dispatcher ──────────────────────────────────────────────
 	mux := http.NewServeMux()
 
 	c := cfg.Challenges
 	dispatcher := challenges.NewDispatcher(
 		globalStore, tokenMgr,
+		cfg.TokenSecret,
 		c.TorFriendly, c.TorExitListURL, c.TorExitRefresh.Duration,
 		c.Strategy, c.BasePath,
 		c.JSDifficulty, c.TorJSDifficulty,
@@ -128,7 +137,6 @@ func main() {
 	)
 	dispatcher.RegisterRoutes(mux)
 
-	// Ensure challenge base path is exempt from session/WAF checks
 	base := strings.TrimRight(c.BasePath, "/")
 	if !cfg.IsExemptPath(base + "/") {
 		cfg.Challenges.ExemptPaths = append(cfg.Challenges.ExemptPaths, base+"/")
@@ -136,20 +144,29 @@ func main() {
 
 	mux.Handle("/", inner)
 
-	sessionMW := middleware.NewSession(
-		mux,
-		http.HandlerFunc(dispatcher.Dispatch),
-		tokenMgr,
-		cfg,
-		log,
-	)
-	antiBotMW  := middleware.NoBot(sessionMW, cfg.AntiBot, log)
-	ja3MW      := middleware.NewJA3Check(antiBotMW, cfg.JA3, tlsfpListener, banMgr, log)
-	scraperMW  := middleware.NewScraperDetector(ja3MW, cfg.Scraper, banMgr, log)
-	rateMW     := middleware.NewRateLimit(scraperMW, cfg.RateLimit, banMgr, log)
-	normMW     := middleware.NewPathNormalizer(rateMW, base)
-	metricsMW  := middleware.NewMetrics(normMW)
+	// ── Middleware chain (outermost → innermost) ──────────────────────────
+	//
+	//  reputationMW  — group scoring, pre-emptive ban, challenge escalation
+	//  metricsMW     — prometheus counters (wraps everything)
+	//    normMW      — path normalisation
+	//      rateMW    — per-IP rate limiting + blacklist
+	//        scraperMW — behaviour analysis (path ratio, timing, referer)
+	//          ja3MW   — JA4 fingerprint blocklist (header-only, nginx sets it)
+	//            antiBotMW — UA pattern matching
+	//              sessionMW — token validation / challenge dispatch
 
+	sessionMW  := middleware.NewSession(mux, http.HandlerFunc(dispatcher.Dispatch), tokenMgr, cfg, policyEngine, log)
+	antiBotMW  := middleware.NoBot(sessionMW, cfg.AntiBot, policyEngine, log)
+	ja3MW      := middleware.NewJA3Check(antiBotMW, cfg.JA3, banMgr, log)
+	scraperMW  := middleware.NewScraperDetector(ja3MW, cfg.Scraper, policyEngine, banMgr, log)
+	dnsblGate  := middleware.NewDNSBLGate(scraperMW, dnsblChecker, repStore, cfg.DNSBL.Penalty, log)
+	rateMW     := middleware.NewRateLimit(dnsblGate, cfg.RateLimit, banMgr, log)
+	normMW     := middleware.NewPathNormalizer(rateMW, base)
+	repMW      := middleware.NewReputation(normMW, repStore, banMgr, repCfg, log)
+	metricsMW  := middleware.NewMetrics(repMW)
+	allowlistMW := middleware.NewAllowlist(metricsMW, cfg.Allowlist.Enabled, cfg.Allowlist.CIDRs, log)
+
+	// ── Metrics server ────────────────────────────────────────────────────
 	if cfg.Metrics.Enabled {
 		metricsSrv := &http.Server{
 			Addr:              cfg.Metrics.ListenAddr,
@@ -165,10 +182,10 @@ func main() {
 		}()
 	}
 
-	// Main server
+	// ── Main server ───────────────────────────────────────────────────────
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
-		Handler:           metricsMW,
+		Handler:           allowlistMW,
 		ReadHeaderTimeout: 15 * time.Second,
 		ReadTimeout:       0,
 		WriteTimeout:      0,
@@ -181,15 +198,9 @@ func main() {
 	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
 
 	go func() {
-		log.Info("WAF proxy listening", "addr", cfg.ListenAddr, "tls", cfg.TLS.Enabled())
-		var serveErr error
-		if tlsListener != nil {
-			serveErr = srv.Serve(tlsListener)
-		} else {
-			serveErr = srv.ListenAndServe()
-		}
-		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			log.Error("server fatal error", "err", serveErr)
+		log.Info("WAF proxy listening", "addr", cfg.ListenAddr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("server fatal error", "err", err)
 			os.Exit(1)
 		}
 	}()

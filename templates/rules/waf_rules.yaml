@@ -1,6 +1,29 @@
 # ============================================================
-# Targets: uri | body | ua | header:Name | all_headers
-# Action:  block (default) | log
+# WAF Rules — loaded at runtime from /etc/waf/waf_rules.yaml
+# Falls back to built-in rules if this file is absent.
+#
+# Fields:
+#   id:        unique identifier (required)
+#   tag:       category for log grouping (sqli, xss, traversal, …)
+#   action:    block (default) | log
+#   score:     ban-score added on block (0 = no ban contribution)
+#   severity:  critical | high | medium | low  (for anomaly accumulation)
+#   condition: any (default) | all  — how multi-target matches combine
+#   transform: none | lowercase | normalize_path | decode_url
+#   targets:   list of:
+#                uri          — path + query string
+#                path         — path only
+#                query        — raw query string
+#                body         — request body (first 64 KB)
+#                method       — HTTP method
+#                ua           — User-Agent header
+#                referer      — Referer header
+#                all          — uri + all headers (excludes Cookie/Authorization)
+#                header:Name  — specific request header
+#                param:name   — individual query parameter
+#                form:name    — individual form field (x-www-form-urlencoded)
+#   pattern:   RE2 regular expression
+#   message:   human-readable description logged on match
 # ============================================================
 
 # SQL Injection

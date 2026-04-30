@@ -15,7 +15,10 @@ type Dispatcher struct {
 	js       *JSHandler
 	css      *CSSHandler
 	sc       *ScryptHandler
+	fp       *FingerprintHandler
+	cookie   *CookieChallenge
 	tor      *TorExitList
+	static   *staticHandler
 	strategy string
 	basePath string
 	log      *slog.Logger
@@ -24,6 +27,7 @@ type Dispatcher struct {
 func NewDispatcher(
 	s *store.Store,
 	tm *token.Manager,
+	tokenSecret string,
 	torFriendly bool,
 	torURL string,
 	torRefresh time.Duration,
@@ -44,6 +48,9 @@ func NewDispatcher(
 		js:       NewJSHandler(s, tm, nonceTTL, jsDiff, basePath, log),
 		css:      NewCSSHandler(s, tm, nonceTTL, cssSeqLen, basePath, log),
 		sc:       NewScryptHandler(s, tm, nonceTTL, scryptDiff, scryptN, scryptR, scryptP, scryptKeyLen, basePath, log),
+		fp:       NewFingerprintHandler(s, tm, nonceTTL, basePath, log),
+		cookie:   NewCookieChallenge(tokenSecret, tm),
+		static:   newStaticHandler(),
 		tor:      tor,
 		strategy: strategy,
 		basePath: strings.TrimRight(basePath, "/"),
@@ -59,6 +66,9 @@ func (d *Dispatcher) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(base+"/css/", d.css.ServeHTTP)
 	mux.HandleFunc(base+"/scrypt", d.sc.ServeHTTP)
 	mux.HandleFunc(base+"/verify-scrypt", d.sc.ServeHTTP)
+	mux.HandleFunc(base+"/fingerprint", d.fp.ServeHTTP)
+	mux.HandleFunc(base+"/verify-fingerprint", d.fp.ServeHTTP)
+	mux.Handle(base+"/static/", d.static)
 }
 
 func (d *Dispatcher) Dispatch(w http.ResponseWriter, r *http.Request) {
@@ -77,13 +87,28 @@ func (d *Dispatcher) Dispatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	kind := d.selectChallenge(ip)
+	kind := d.selectChallenge(ip, r)
+	if kind == "cookie" {
+		d.cookie.Handle(w, r)
+		return
+	}
 	target := fmt.Sprintf("%s/%s?redirect=%s", d.basePath, kind, urlPercentEncode(redirect))
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
-func (d *Dispatcher) selectChallenge(ip string) string {
+func (d *Dispatcher) selectChallenge(ip string, r *http.Request) string {
 	isTor := d.tor != nil && d.tor.Contains(ip)
+
+	// Policy override — session middleware sets this from policy engine match.
+	if ch := r.Header.Get("X-WAF-Policy-Challenge"); ch != "" && ch != "none" {
+		return ch
+	}
+
+	// Reputation escalation — flagged subnet/fingerprint → always scrypt.
+	if r.Header.Get("X-WAF-Rep-Score") != "" {
+		return "scrypt"
+	}
+
 	switch d.strategy {
 	case "css_first":
 		return "css"

@@ -14,35 +14,29 @@ type Config struct {
 	TokenSecret string            `yaml:"token_secret"`
 	TokenTTL    Duration          `yaml:"token_ttl"`
 	Backends    map[string]string `yaml:"backends"`
-	TLS         TLSConfig         `yaml:"tls"`
 	RateLimit   RateLimitConfig   `yaml:"rate_limit"`
+	Reputation  ReputationConfig  `yaml:"reputation"`
+	Policies    []PolicyRule      `yaml:"policies"`
+	DNSBL       DNSBLConfig       `yaml:"dnsbl"`
+	AbuseIPDB   AbuseIPDBConfig   `yaml:"abuseipdb"`
+	Bandwidth   BandwidthConfig   `yaml:"bandwidth"`
+	Tarpit      TarpitConfig      `yaml:"tarpit"`
+	Allowlist   AllowlistConfig   `yaml:"allowlist"`
 	AntiBot     AntiBotConfig     `yaml:"antibot"`
 	JA3         JA3Config         `yaml:"ja3"`
 	Scraper     ScraperConfig     `yaml:"scraper"`
 	Challenges  ChallengesConfig  `yaml:"challenges"`
-	Auth        AuthConfig        `yaml:"auth"`
 	Bans        BansConfig        `yaml:"bans"`
 	WAF         WAFConfig         `yaml:"waf"`
 	Logging     LoggingConfig     `yaml:"logging"`
 	Metrics     MetricsConfig     `yaml:"metrics"`
 }
 
-// TLSConfig enables native TLS termination at the WAF.
-// When both CertFile and KeyFile are set the WAF serves HTTPS directly and
-// the tlsfp.Listener can compute JA4 fingerprints from raw ClientHellos.
-// Leave empty when nginx (or another proxy) terminates TLS upstream.
-type TLSConfig struct {
-	CertFile string `yaml:"cert_file"`
-	KeyFile  string `yaml:"key_file"`
-}
-
-func (t TLSConfig) Enabled() bool { return t.CertFile != "" && t.KeyFile != "" }
 
 // JA3Config controls TLS ClientHello fingerprint checking.
 //
 // Two hash sources are supported (checked in order):
 //  1. X-JA4-Hash / X-JA4 header set by an upstream proxy (nginx, haproxy…).
-//  2. Native tlsfp.Listener when the WAF terminates TLS directly.
 //
 // Nginx setup (requires ngx_ssl_ja3 module or OpenResty):
 //
@@ -61,6 +55,95 @@ type JA3Config struct {
 	BanDuration Duration `yaml:"ban_duration"`
 }
 
+// PolicyRule is one entry in the policies list.
+// Policies are evaluated in order; first match wins.
+type PolicyRule struct {
+	Name      string   `yaml:"name"`
+	Hosts     []string `yaml:"hosts"`  // empty = all hosts
+	Paths     []string `yaml:"paths"`  // prefix match; empty = all paths
+	Challenge string   `yaml:"challenge"` // "" | "none" | "cookie" | "js" | "scrypt" | "css"
+	SkipWAF   bool     `yaml:"skip_waf"`
+}
+
+// DNSBLConfig controls async DNS blocklist checking.
+type DNSBLConfig struct {
+	Enabled bool     `yaml:"enabled"`
+	Zones   []string `yaml:"zones"`   // empty = use built-in defaults
+	TTL     Duration `yaml:"ttl"`     // how long to cache results (default 4h)
+	Penalty float64  `yaml:"penalty"` // reputation penalty per zone hit (default 30)
+}
+
+// AllowlistConfig lists IPs and CIDRs that bypass all challenges and WAF rules.
+// Use for monitoring probes, CDN health checks, and your own IPs.
+type AllowlistConfig struct {
+	Enabled bool     `yaml:"enabled"`
+	CIDRs   []string `yaml:"cidrs"`  // "1.2.3.4/32", "10.0.0.0/8", etc.
+}
+
+// AbuseIPDBConfig — async IP reputation checking via AbuseIPDB v2 API.
+// Requires a free API key from https://www.abuseipdb.com/
+// Free tier: 1 000 checks/day.  Results cached for TTL (default 24h) so
+// each unique IP only costs one API call regardless of visit frequency.
+type AbuseIPDBConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	APIKey  string `yaml:"api_key"`  // set via WAF_ABUSEIPDB_KEY env var
+	TTL     Duration `yaml:"ttl"`
+}
+
+// BandwidthConfig — per-IP bandwidth accounting to protect constrained links.
+// Tracks bytes served per IP per window.  Heavy downloaders (scrapers pulling
+// large media, image galleries, or git repos) are caught even if they pass PoW.
+type BandwidthConfig struct {
+	Enabled         bool     `yaml:"enabled"`
+	Window          Duration `yaml:"window"`           // rolling window (default 10m)
+	WarnThresholdMB int      `yaml:"warn_threshold_mb"` // log warning (default 100 MB)
+	BanThresholdMB  int      `yaml:"ban_threshold_mb"`  // ban IP (default 500 MB)
+	BanDuration     Duration `yaml:"ban_duration"`
+}
+
+// TarpitConfig — delay responses for suspected scrapers in the challenge zone.
+// Occupies scraper threads without banning, reducing effective throughput
+// by 20–100x and exhausting residential proxy pools.
+type TarpitConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
+// ReputationConfig controls cross-IP group reputation scoring.
+// When an IP is penalised by any middleware the penalty propagates (at the
+// configured weight) to its /24 subnet, JA4 fingerprint, and ASN groups.
+// New IPs that share a high-scoring group are pre-emptively challenged or
+// banned before they do anything wrong.
+type ReputationConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	PersistFile string `yaml:"persist_file"`
+
+	// ASNDBPath is the path to a MaxMind GeoLite2-ASN (or GeoIP2-ASN) MMDB
+	// file.  Leave empty to disable ASN grouping.  Building with -tags maxmind
+	// is also required; see internal/reputation/asn_stub.go.
+	ASNDBPath string `yaml:"asn_db"`
+
+	// Propagation weights: fraction of an IP-level penalty that is added to
+	// each group score when the IP is penalised.
+	SubnetPropagation      float64  `yaml:"subnet_propagation"`
+	FingerprintPropagation float64  `yaml:"fingerprint_propagation"`
+	ASNPropagation         float64  `yaml:"asn_propagation"`
+
+	// ChallengeThreshold is the inherited group score at which a new IP is
+	// forced through a fresh challenge even if it holds a valid token.
+	ChallengeThreshold float64 `yaml:"challenge_threshold"`
+
+	// BanThreshold is the inherited group score at which a new IP is
+	// immediately banned.
+	BanThreshold float64 `yaml:"ban_threshold"`
+
+	// BanDuration controls how long a reputation-triggered ban lasts.
+	BanDuration Duration `yaml:"ban_duration"`
+
+	// HalfLife controls how fast group scores decay.
+	// After one half-life the score is halved; after two it is quartered.
+	HalfLife Duration `yaml:"half_life"`
+}
+
 type RateLimitConfig struct {
 	Enabled           bool     `yaml:"enabled"`
 	WindowSeconds     int      `yaml:"window_seconds"`
@@ -68,11 +151,18 @@ type RateLimitConfig struct {
 	BlacklistDuration Duration `yaml:"blacklist_duration"`
 }
 
+// AntiBotConfig — header-based bot filtering.
+//
+// CrawlerPolicy controls how verified search-engine crawlers are handled:
+//   - "challenge" (default): same PoW as everyone else.
+//   - "permissive": bypass challenges (still rate-limited + WAF rules).
+//   - "strict": block all crawlers outright.
 type AntiBotConfig struct {
 	Enabled             bool   `yaml:"enabled"`
 	BlockEmptyUserAgent bool   `yaml:"block_empty_user_agent"`
 	BlockEmptyAccept    bool   `yaml:"block_empty_accept"`
 	BotUAListFile       string `yaml:"bot_ua_list_file"`
+	CrawlerPolicy       string `yaml:"crawler_policy"` // challenge | permissive | strict
 }
 
 // ScraperConfig drives the behaviour-based scraper detection middleware.
@@ -138,17 +228,6 @@ type ChallengesConfig struct {
 	//
 	// Supported file names: js_pow.html, scrypt.html, css.html, fingerprint.html
 	TemplateDir string `yaml:"template_dir"`
-}
-
-// AuthConfig — HTTP Basic Auth for sensitive path prefixes.
-// Users stores bcrypt hashes (generate with: htpasswd -nbB user pass).
-// Paths maps path prefixes to lists of allowed usernames.
-// Use "*" as a username to allow any authenticated user.
-type AuthConfig struct {
-	Enabled bool                `yaml:"enabled"`
-	Realm   string              `yaml:"realm"`
-	Users   map[string]string   `yaml:"users"`  // username -> "$2a$..." bcrypt hash
-	Paths   map[string][]string `yaml:"paths"`  // "/servers" -> ["admin"]
 }
 
 // BansConfig — persistent ban storage and fail2ban integration.
@@ -241,12 +320,41 @@ func (c *Config) validate() error {
 	if c.JA3.BanDuration.Duration == 0 {
 		c.JA3.BanDuration.Duration = 24 * time.Hour
 	}
+	// Defaults for DNSBL
+	if c.DNSBL.TTL.Duration == 0 {
+		c.DNSBL.TTL.Duration = 4 * time.Hour
+	}
+	if c.DNSBL.Penalty == 0 {
+		c.DNSBL.Penalty = 30
+	}
+	// Defaults for reputation
+	if c.Reputation.SubnetPropagation == 0 {
+		c.Reputation.SubnetPropagation = 0.25
+	}
+	if c.Reputation.FingerprintPropagation == 0 {
+		c.Reputation.FingerprintPropagation = 0.50
+	}
+	if c.Reputation.ASNPropagation == 0 {
+		c.Reputation.ASNPropagation = 0.08
+	}
+	if c.Reputation.ChallengeThreshold == 0 {
+		c.Reputation.ChallengeThreshold = 50
+	}
+	if c.Reputation.BanThreshold == 0 {
+		c.Reputation.BanThreshold = 80
+	}
+	if c.Reputation.BanDuration.Duration == 0 {
+		c.Reputation.BanDuration.Duration = 4 * time.Hour
+	}
+	if c.Reputation.HalfLife.Duration == 0 {
+		c.Reputation.HalfLife.Duration = 6 * time.Hour
+	}
 	// Defaults for scraper detector
 	if c.Scraper.Window.Duration == 0 {
 		c.Scraper.Window.Duration = 2 * time.Minute
 	}
 	if c.Scraper.MinRequests == 0 {
-		c.Scraper.MinRequests = 10
+		c.Scraper.MinRequests = 15
 	}
 	if c.Scraper.UniquePathRatioSoft == 0 {
 		c.Scraper.UniquePathRatioSoft = 0.75
@@ -261,13 +369,13 @@ func (c *Config) validate() error {
 		c.Scraper.MetronomeJitterMs = 50
 	}
 	if c.Scraper.ChallengeThreshold == 0 {
-		c.Scraper.ChallengeThreshold = 40
+		c.Scraper.ChallengeThreshold = 80
 	}
 	if c.Scraper.BanThreshold == 0 {
-		c.Scraper.BanThreshold = 80
+		c.Scraper.BanThreshold = 180
 	}
 	if c.Scraper.BanDuration.Duration == 0 {
-		c.Scraper.BanDuration.Duration = 24 * time.Hour
+		c.Scraper.BanDuration.Duration = 4 * time.Hour
 	}
 	return nil
 }

@@ -44,7 +44,7 @@ func (rl *RateLimit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if rl.blacklist.Exists("bl:" + ip) {
 		rl.log.Info("rate_limit: blacklisted", "ip", ip)
 		w.Header().Set("Retry-After", "3600")
-		errorpage.Write(w, http.StatusTooManyRequests)
+		errorpage.WriteBlock(w, http.StatusTooManyRequests, ip, "rate_limit:blacklisted", rl.log)
 		return
 	}
 
@@ -53,7 +53,7 @@ func (rl *RateLimit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if banned, entry := rl.banMgr.IsBanned(ip); banned {
 			rl.log.Info("rate_limit: persistently banned", "ip", ip, "reason", entry.Reason)
 			w.Header().Set("Retry-After", "3600")
-			errorpage.Write(w, http.StatusTooManyRequests)
+			errorpage.WriteBlock(w, http.StatusTooManyRequests, ip, "rate_limit", rl.log)
 			return
 		}
 	}
@@ -68,7 +68,7 @@ func (rl *RateLimit) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rl.log.Warn("rate_limit: threshold exceeded",
 			"ip", ip, "count", count, "limit", rl.cfg.MaxRequests)
 		w.Header().Set("Retry-After", "3600")
-		errorpage.Write(w, http.StatusTooManyRequests)
+		errorpage.WriteBlock(w, http.StatusTooManyRequests, ip, "rate_limit:threshold", rl.log)
 		return
 	}
 

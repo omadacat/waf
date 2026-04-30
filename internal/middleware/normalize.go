@@ -17,6 +17,23 @@ func NewPathNormalizer(next http.Handler, exemptPrefix string) *PathNormalizer {
 }
 
 func (pn *PathNormalizer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Strip headers that WAF middleware sets internally or that nginx sets from
+	// its own knowledge ($remote_addr, TLS info).  A client sending these could
+	// spoof IP addresses, fingerprints, or reputation scores.
+	// nginx also strips them before proxying (proxy_set_header X-Real-IP ""),
+	// but we enforce it here as a belt-and-suspenders measure.
+	for _, h := range []string{
+		"X-Real-Ip",        // nginx doesn't set this; if present it's client-forged
+		"X-Ja4-Hash",       // fingerprint header — only trusted from our nginx
+		"X-Ja4",            // alternate fingerprint header
+		"X-Waf-Ja4",        // internal annotation set by ja3MW
+		"X-Waf-Rep-Score",  // internal reputation annotation
+		"X-Ssl-Protocol",   // set by nginx, not the client
+		"X-Ssl-Cipher",     // set by nginx, not the client
+	} {
+		r.Header.Del(h)
+	}
+
 	p := r.URL.Path
 
 	// Reject non-UTF-8 paths immediately, no legitimate client should send these

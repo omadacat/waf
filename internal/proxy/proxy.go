@@ -63,6 +63,14 @@ func buildProxy(target *url.URL, log *slog.Logger) *httputil.ReverseProxy {
 			if req.Header.Get("X-Forwarded-Proto") == "" {
 				req.Header.Set("X-Forwarded-Proto", "https")
 			}
+			// Strip all WAF-internal headers before the request reaches
+			// the backend application.  These are set by middleware layers
+			// during processing and must never be visible to the app.
+			req.Header.Del("X-WAF-Rep-Score")
+			req.Header.Del("X-WAF-JA4")
+			req.Header.Del("X-WAF-Policy-Challenge")
+			req.Header.Del("X-WAF-Scraper-Score")
+			req.Header.Del("X-JA4-Hash")
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			resp.Header.Del("X-Powered-By")

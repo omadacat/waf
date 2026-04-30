@@ -4,8 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
 <meta name="theme-color" content="#328c60">
+<meta name="robots" content="noindex,nofollow">
 <link rel="icon" href="/favicon.ico">
-<title>Enhanced security check — lvsci.net</title>
+<title>Enhanced security check — {{.Host}}</title>
 <style>
 *{margin:0;padding:0}
 html{width:100%;background:#fff;color:#000;font-family:"Noto Serif","Source Serif",Times New Roman,Times,serif;line-height:1.75}
@@ -13,53 +14,96 @@ body,html{min-height:100vh}
 body{display:flex;margin:0 auto;max-width:83vw;flex-wrap:wrap;flex-direction:column;justify-content:space-between}
 header{margin:10vh 0 0;padding-bottom:1em;border-bottom:5px solid #328c60}
 header a{font-size:1.5em;font-weight:bold;color:#000;text-decoration:none}
-header a:hover{text-decoration:none}
-main{background:#f8faf9;border-radius:8px;box-shadow:0 2px 8px rgba(50,140,96,.1);padding:2.5rem;margin-top:2rem;margin-bottom:2rem}
-main h1{font-size:2.2rem;color:#2d7353;line-height:1.3;border-bottom:2px solid #e0efe8;padding-bottom:1rem;margin-bottom:1.5rem}
-main h1 em{color:#4a9b78;font-size:1.1rem;font-style:normal}
+main{background:#f8faf9;border-radius:8px;box-shadow:0 2px 8px rgba(50,140,96,.1);padding:2.5rem;margin-top:2rem;margin-bottom:2rem;display:flex;flex-direction:row;gap:2rem;align-items:flex-start}
+.main-text{flex:1}
+.mascot{width:96px;height:96px;flex-shrink:0;image-rendering:pixelated;align-self:center}
+main h1{font-size:2rem;color:#2d7353;line-height:1.3;border-bottom:2px solid #e0efe8;padding-bottom:1rem;margin-bottom:1.5rem}
+main h1 em{color:#4a9b78;font-size:1rem;font-style:normal}
 main p{margin:1.2rem 0;color:#3a3a3a;line-height:1.8}
 main b{color:#328c60;padding:.2rem .4rem;background:#e8f5f0;border-radius:4px}
-a{transition:all .2s ease;color:#36c;text-decoration:none}
-main a{border-bottom:1px dashed rgba(54,204,204,.3)}
-a:hover{color:#2a8a5c;text-decoration:none;border-bottom-style:solid}
+.prog{font-family:monospace;color:#c0392b;font-size:.9em;margin-top:.5rem}
+.bar-wrap{background:#ffe0e0;border-radius:99px;height:6px;margin-top:1rem;overflow:hidden}
+.bar-inner{background:#c0392b;height:100%;width:0;transition:width .5s ease;border-radius:99px}
 em,footer{color:#777;font-style:normal}
 footer{margin:0 0 10vh;padding-top:1em;border-top:1px solid #eaecf0;font-size:.9em}
-.footer-links a{margin-right:.5em;white-space:nowrap}
-@media(max-width:768px){main{padding:1.5rem;margin-top:1rem;margin-bottom:1rem}main h1{font-size:1.8rem}}
-@media(prefers-color-scheme:dark){html{background:#121212;color:#e0e0e0}header{border-bottom-color:#2d7353}header a{color:#e0e0e0}main{background:#1e1e1e;box-shadow:0 2px 8px rgba(0,0,0,.5)}main h1{color:#6bc29a;border-bottom-color:#2d3833}main h1 em{color:#8fd4b0}main p{color:#ccc}main b{color:#8fd4b0;background:#2d3833}a{color:#66b3ff}main a{border-bottom-color:rgba(102,179,255,.3)}a:hover{color:#6bc29a}em,footer{color:#aaa}footer{border-top-color:#333}}
-.spin{display:inline-block;width:36px;height:36px;border:4px solid #e0efe8;border-top-color:#c0392b;border-radius:50%;animation:sp .8s linear infinite;margin-bottom:1.2rem}
-@keyframes sp{to{transform:rotate(360deg)}}
-.prog{font-family:monospace;color:#c0392b;font-size:.9em;margin-top:.5rem}
-@media(prefers-color-scheme:dark){.spin{border-color:#2d3833;border-top-color:#e74c3c}.prog{color:#e74c3c}}
+.footer-links a{margin-right:.5em;white-space:nowrap;color:#36c;text-decoration:none}
+@media(max-width:768px){main{padding:1.5rem;flex-direction:column}main h1{font-size:1.6rem}.mascot{width:64px;height:64px;align-self:flex-start}}
+@media(prefers-color-scheme:dark){html{background:#121212;color:#e0e0e0}header{border-bottom-color:#2d7353}header a{color:#e0e0e0}main{background:#1e1e1e;box-shadow:0 2px 8px rgba(0,0,0,.5)}main h1{color:#6bc29a;border-bottom-color:#2d3833}main h1 em{color:#8fd4b0}main p{color:#ccc}main b{color:#8fd4b0;background:#2d3833}.prog{color:#e74c3c}.bar-wrap{background:#3a1a1a}.bar-inner{background:#e74c3c}em,footer{color:#aaa}footer{border-top-color:#333}}
 </style>
 </head>
 <body>
-<header><a href="/">lvsci.net</a></header>
+<header><a href="/">{{.Host}}</a></header>
 <main>
-    <div class="spin" aria-hidden="true"></div>
+  <img class="mascot" src="{{.BasePath}}/static/img/neofox_think.png" alt="" aria-hidden="true">
+  <div class="main-text">
     <h1>Enhanced security check <em>(memory-hard)</em></h1>
-    <p>Your connection has been flagged for additional verification. This may take <b>10–60 seconds</b> depending on your device.</p>
-    <p>Please keep this tab open and do not navigate away.</p>
+    <p>Your connection requires additional verification. This uses a memory-hard function and may take <b>10–60 seconds</b> depending on your device.</p>
+    <p>Please keep this tab open.</p>
     <p class="prog" id="prog">Computing…</p>
+    <div class="bar-wrap"><div class="bar-inner" id="bar"></div></div>
+  </div>
 </main>
 <footer>
-    <div class="footer-links">
-        <a href="/">Home</a>
-        <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a>
-    </div>
+  <div class="footer-links">
+    <a href="/">Home</a>
+    <a href="https://git.omada.cafe/atf/waf" rel="noopener">WAF</a>
+  </div>
 </footer>
 <script>
 "use strict";
 (function(){
-/* Inline SHA-256 for environments without crypto.subtle */
+/* Inline SHA-256 — reliable fallback for environments without crypto.subtle */
 var K=[0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2];
 function rr(v,a){return(v>>>a)|(v<<(32-a))}
 function sha256hex(msg){var m=unescape(encodeURIComponent(msg)),l=m.length,i;var b=[];for(i=0;i<l;i++)b[i>>2]|=(m.charCodeAt(i)&0xff)<<(24-(i%4)*8);b[l>>2]|=0x80<<(24-(l%4)*8);b[((l+64>>6)<<4)+15]=l*8;var W=new Array(64),H=[0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19];for(var j=0;j<b.length;j+=16){var a=H[0],bv=H[1],c=H[2],d=H[3],e=H[4],f=H[5],g=H[6],h=H[7];for(i=0;i<64;i++){if(i<16)W[i]=b[j+i]|0;else W[i]=(rr(W[i-2],17)^rr(W[i-2],19)^(W[i-2]>>>10))+(W[i-7]|0)+(rr(W[i-15],7)^rr(W[i-15],18)^(W[i-15]>>>3))+(W[i-16]|0)|0;var t1=h+(rr(e,6)^rr(e,11)^rr(e,25))+((e&f)^(~e&g))+K[i]+W[i]|0;var t2=(rr(a,2)^rr(a,13)^rr(a,22))+((a&bv)^(a&c)^(bv&c))|0;h=g;g=f;f=e;e=d+t1|0;d=c;c=bv;bv=a;a=t1+t2|0;}H[0]=a+H[0]|0;H[1]=bv+H[1]|0;H[2]=c+H[2]|0;H[3]=d+H[3]|0;H[4]=e+H[4]|0;H[5]=f+H[5]|0;H[6]=g+H[6]|0;H[7]=h+H[7]|0;}var hex='';for(i=0;i<8;i++){var v=H[i];for(var k=3;k>=0;k--)hex+=((v>>(k*8))&0xff).toString(16).padStart(2,'0');}return hex;}
 function zeroBits(h){var b=0;for(var i=0;i<h.length;i++){var n=parseInt(h[i],16);if(n===0){b+=4;}else{if(n<2)b+=3;else if(n<4)b+=2;else if(n<8)b+=1;break;}}return b;}
-var challenge={{.Challenge}},difficulty={{.Difficulty}},redirect={{.Redirect}},base={{.BasePath}};
-var prog=document.getElementById('prog'),c=0;
-function work(){for(var end=c+500;c<end;c++){if(zeroBits(sha256hex(challenge+String(c)))>=difficulty){prog.textContent='Verified — redirecting…';var f=document.createElement('form');f.method='POST';f.action=base+'/verify-scrypt';[['challenge',challenge],['nonce',String(c)],['redirect',redirect]].forEach(function(p){var i=document.createElement('input');i.type='hidden';i.name=p[0];i.value=p[1];f.appendChild(i);});document.body.appendChild(f);f.submit();return;}}prog.textContent='Computing… ('+c.toLocaleString()+')';setTimeout(work,0);}
-setTimeout(work,100);
+
+var challenge={{.Challenge}};
+var difficulty={{.Difficulty}};
+var redirect={{.Redirect}};
+var base={{.BasePath}};
+var prog=document.getElementById('prog');
+var barEl=document.getElementById('bar');
+var c=0, start=Date.now(), MIN_MS=1500;
+
+function submit(nonce) {
+  var elapsed = Date.now() - start;
+  var wait = Math.max(0, MIN_MS - elapsed);
+  setTimeout(function() {
+    prog.textContent = 'Verified — redirecting…';
+    barEl.style.width = '100%';
+    fetch(base + '/verify-scrypt', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({
+        challenge:   challenge,
+        nonce:       String(nonce),
+        redirect:    redirect,
+        elapsedTime: String(elapsed + wait)
+      })
+    }).then(function(res) {
+      try { localStorage.setItem('_waf_solved', Date.now()); } catch(e) {}
+      window.location.href = res.redirected ? res.url : redirect;
+    }).catch(function() {
+      prog.textContent = 'Network error — reloading…';
+      setTimeout(function() { window.location.reload(); }, 2000);
+    });
+  }, wait);
+}
+
+function work() {
+  for (var end=c+300; c<end; c++) {
+    if (zeroBits(sha256hex(challenge + String(c))) >= difficulty) {
+      submit(c); return;
+    }
+  }
+  var elapsed = Math.max(1, Date.now() - start);
+  var pct = Math.min(97, Math.round(c / Math.pow(2, difficulty) * 100));
+  barEl.style.width = pct + '%';
+  prog.textContent = 'Computing… (' + c.toLocaleString() + ' tries, ~' + Math.round(elapsed/1000) + 's)';
+  setTimeout(work, 0);
+}
+setTimeout(work, 100);
 })();
 </script>
 </body>

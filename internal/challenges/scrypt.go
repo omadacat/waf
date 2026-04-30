@@ -3,6 +3,7 @@ package challenges
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +55,7 @@ func (h *ScryptHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type scryptTemplateData struct {
+	Host        string
 	BasePath    string
 	Challenge   string
 	Difficulty  int
@@ -74,6 +76,7 @@ func (h *ScryptHandler) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 
 	data := scryptTemplateData{
+		Host:        cleanHost(r),
 		BasePath:    h.basePath,
 		Challenge:   challenge,
 		Difficulty:  h.difficulty,
@@ -109,6 +112,16 @@ func (h *ScryptHandler) verify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.store.Delete("scrypt:" + challenge)
+
+	if elapsedStr := r.FormValue("elapsedTime"); elapsedStr != "" {
+		if ms, err := strconv.ParseInt(elapsedStr, 10, 64); err == nil && ms < 500 {
+			h.log.Warn("scrypt: solution too fast — likely bot", "ip", ip, "elapsed_ms", ms)
+			errorpage.Write(w, http.StatusForbidden)
+			return
+		} else if err == nil {
+			h.log.Debug("scrypt: solution timing", "ip", ip, "elapsed_ms", ms)
+		}
+	}
 
 	key, err := scrypt.Key([]byte(challenge+nonce), []byte("scrypt-v1"), h.N, h.r, h.p, h.keyLen)
 	if err != nil {

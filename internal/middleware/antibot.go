@@ -10,32 +10,53 @@ import (
 
 	"git.omada.cafe/atf/waf/internal/config"
 	"git.omada.cafe/atf/waf/internal/errorpage"
+	"git.omada.cafe/atf/waf/internal/policy"
 )
 
-// Default built-in bad bot User-Agent patterns (regex).
-// These catch the most common AI scrapers and generic HTTP clients.
-// The external bot_ua_list_file extends this list at runtime.
+// builtinBadBotPatterns are unconditionally blocked regardless of crawler
+// policy.  These are scraping frameworks and AI content scrapers that have
+// no legitimate reason to hit a self-hosted webapp.
+//
+// IMPORTANT: generic HTTP libraries (Go, OkHttp, Java, curl) are NOT here.
+// Many legitimate apps use them (Nextcloud desktop = Go, DAVx5 = OkHttp,
+// Jellyfin Android = OkHttp, RSS readers = various).  If an operator wants
+// to block raw curl/wget, they add patterns to bad_bots.txt — not here,
+// because that would create false positives for other people deploying the
+// same WAF.
 var builtinBadBotPatterns = []string{
-	// Generic HTTP libraries — rarely a real browser
-	`(?i)^(curl|wget|python-requests|python-urllib|go-http-client|java\/|okhttp|apache-httpclient)`,
-	// Known AI scrapers
-	`(?i)(GPTBot|ChatGPT-User|CCBot|anthropic-ai|ClaudeBot|cohere-ai|PerplexityBot|YouBot|Bytespider)`,
+	// AI content scrapers — high bandwidth, no value to the site
+	`(?i)(GPTBot|ChatGPT-User|CCBot|anthropic-ai|ClaudeBot|cohere-ai|PerplexityBot|YouBot|Bytespider|Google-Extended)`,
+	// SEO / link analysis crawlers — also high bandwidth, no user benefit
 	`(?i)(AhrefsBot|MJ12bot|DotBot|SemrushBot|BLEXBot|PetalBot|DataForSeoBot)`,
-	// Generic scrapers
-	`(?i)(scrapy|mechanize|libwww-perl|lwp-trivial|urllib|httpx|aiohttp|httplib)`,
-	// Empty / whitespace-only
-	`^\s*$`,
+	// Scraping frameworks — these are tools, not browsers or apps
+	`(?i)(scrapy|mechanize|libwww-perl|lwp-trivial)`,
+}
+
+// searchEngineCrawlers are patterns for legitimate search engine crawlers.
+// Used by crawler_policy: permissive (let through) and strict (block).
+var searchEngineCrawlers = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)Googlebot`),
+	regexp.MustCompile(`(?i)bingbot`),
+	regexp.MustCompile(`(?i)Baiduspider`),
+	regexp.MustCompile(`(?i)YandexBot`),
+	regexp.MustCompile(`(?i)DuckDuckBot`),
+	regexp.MustCompile(`(?i)Applebot`),
+	regexp.MustCompile(`(?i)Twitterbot`),
 }
 
 type AntiBot struct {
 	next     http.Handler
 	cfg      config.AntiBotConfig
+	pol      *policy.Engine
 	patterns []*regexp.Regexp
 	log      *slog.Logger
 }
 
-func NoBot(next http.Handler, cfg config.AntiBotConfig, log *slog.Logger) *AntiBot {
-	g := &AntiBot{next: next, cfg: cfg, log: log}
+// NoBot constructs the antibot middleware.
+// pol may be nil; if provided, requests matching challenge:"none" policies
+// skip all antibot checks.
+func NoBot(next http.Handler, cfg config.AntiBotConfig, pol *policy.Engine, log *slog.Logger) *AntiBot {
+	g := &AntiBot{next: next, cfg: cfg, pol: pol, log: log}
 	g.patterns = compilePatterns(builtinBadBotPatterns)
 
 	if cfg.BotUAListFile != "" {
@@ -48,6 +69,11 @@ func NoBot(next http.Handler, cfg config.AntiBotConfig, log *slog.Logger) *AntiB
 		}
 	}
 
+	if cfg.CrawlerPolicy == "" {
+		cfg.CrawlerPolicy = "challenge"
+	}
+	g.cfg = cfg
+
 	return g
 }
 
@@ -57,23 +83,49 @@ func (g *AntiBot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Policy-exempt paths skip all antibot checks.
+	if g.pol != nil {
+		if action, matched := g.pol.Match(r); matched && action.SkipChallenge {
+			g.next.ServeHTTP(w, r)
+			return
+		}
+	}
+
 	ip := extractIP(r)
 	ua := r.Header.Get("User-Agent")
 	accept := r.Header.Get("Accept")
 
-	// you can have empty user agents apparently
+	// Empty UA check (configurable — some legitimate embedded clients
+	// don't set a UA, which is why this is a flag, not a builtin pattern).
 	if g.cfg.BlockEmptyUserAgent && strings.TrimSpace(ua) == "" {
 		g.block(w, r, ip, "empty_user_agent")
 		return
 	}
 
-	// Block empty Accept header (browsers always send Accept)
+	// Empty Accept check.
 	if g.cfg.BlockEmptyAccept && strings.TrimSpace(accept) == "" {
 		g.block(w, r, ip, "empty_accept")
 		return
 	}
 
-	// Match against UA
+	// Crawler policy: handle search engine bots before general patterns.
+	if isSearchCrawler(ua) {
+		switch g.cfg.CrawlerPolicy {
+		case "permissive":
+			// Let verified crawlers through without challenge.
+			g.log.Debug("antibot: crawler permitted", "ip", ip, "ua", ua)
+			g.next.ServeHTTP(w, r)
+			return
+		case "strict":
+			// Block all crawlers outright.
+			g.block(w, r, ip, "crawler_blocked")
+			return
+		default: // "challenge"
+			// Fall through — crawlers solve the same challenge as everyone.
+		}
+	}
+
+	// Bad bot patterns (builtins + external file).
 	for _, pat := range g.patterns {
 		if pat.MatchString(ua) {
 			g.block(w, r, ip, "bot_ua_match")
@@ -84,6 +136,15 @@ func (g *AntiBot) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	g.next.ServeHTTP(w, r)
 }
 
+func isSearchCrawler(ua string) bool {
+	for _, re := range searchEngineCrawlers {
+		if re.MatchString(ua) {
+			return true
+		}
+	}
+	return false
+}
+
 func (g *AntiBot) block(w http.ResponseWriter, r *http.Request, ip, reason string) {
 	g.log.Info("go_away block",
 		"ip", ip,
@@ -92,7 +153,7 @@ func (g *AntiBot) block(w http.ResponseWriter, r *http.Request, ip, reason strin
 		"path", r.URL.Path,
 		"host", r.Host,
 	)
-	errorpage.Write(w, http.StatusForbidden)
+	errorpage.WriteBlock(w, http.StatusForbidden, ip, "antibot:"+reason, g.log)
 }
 
 func compilePatterns(patterns []string) []*regexp.Regexp {
@@ -124,6 +185,3 @@ func loadPatternFile(path string) ([]string, error) {
 	}
 	return patterns, sc.Err()
 }
-
-// Since we're behind Nginx, X-Forwarded-For is set by our own proxy and can be trusted for the first IP in the chain.
-// for better testing, we might want to expand this so it isn't dependent on Nginx

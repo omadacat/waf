@@ -90,6 +90,7 @@ func (h *FingerprintHandler) serve(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	mustTemplate("fingerprint.html", tmplFingerprint).Execute(w, map[string]string{
+		"Host":     cleanHost(r),
 		"BasePath": h.basePath,
 		"Nonce":    nonce,
 		"Redirect": redirect,

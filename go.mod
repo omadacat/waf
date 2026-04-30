@@ -3,6 +3,7 @@ module git.omada.cafe/atf/waf
 go 1.22
 
 require (
+	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/prometheus/client_golang v1.19.1
 	golang.org/x/crypto v0.24.0
 	gopkg.in/yaml.v3 v3.0.1

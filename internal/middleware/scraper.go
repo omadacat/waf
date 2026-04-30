@@ -9,60 +9,66 @@ import (
 	"time"
 
 	"git.omada.cafe/atf/waf/internal/bans"
+	"git.omada.cafe/atf/waf/internal/policy"
 	"git.omada.cafe/atf/waf/internal/config"
 	"git.omada.cafe/atf/waf/internal/errorpage"
 )
 
-// reSequential matches paths that contain a run of digits — used to detect
-// sequential enumeration (e.g. /post/1, /post/2, /post/3 …).
 var reSequential = regexp.MustCompile(`/\d+(?:/|$)`)
 
 // ipState tracks per-IP crawl signals within a sliding window.
 type ipState struct {
 	mu sync.Mutex
 
-	// Unique paths seen in the current window.
-	paths map[string]struct{}
+	// navPaths / navTotal track non-asset navigation requests only.
+	// Asset requests (.png, .css, etc.) are excluded from ratio and referer
+	// signals because they are trivially unique and cause false positives
+	// on image-heavy pages.
+	navPaths map[string]struct{}
+	navTotal int
 
-	// Sequential numeric path IDs seen (last N values).
-	seqIDs []int64
-
-	// Timestamps of the last maxTimings requests (for regularity check).
-	timings []time.Time
-
-	// Total requests in the current window.
+	// total counts all requests; used only for timing analysis.
 	total int
 
-	// Window start.
-	windowStart time.Time
+	seqIDs  []int64
+	timings []time.Time
 
-	// Score accumulated against this IP (higher = more bot-like).
-	score int
+	windowStart time.Time
+	score       int
+
+	// signalsFired tracks which signals have already contributed to the
+	// score in this window.  Once a signal fires, it cannot fire again
+	// until the window rolls.  This prevents runaway score accumulation
+	// where e.g. metronomic adds +30 on every single asset request.
+	signalsFired map[string]bool
 }
 
-// ScraperDetector analyses per-IP request behaviour to catch crawlers that
-// have already passed the JS/scrypt challenge and hold a valid token.
+// ScraperDetector analyses per-IP request behaviour.
 //
-// Signals tracked:
-//   - Unique-path ratio: crawlers hit many distinct URLs; browsers revisit.
-//   - Sequential path enumeration: /item/1, /item/2, /item/3 …
-//   - Missing Referer on HTML navigations: browsers carry the chain.
-//   - Suspiciously uniform inter-request timing: bots are metronomic.
+// Signals:
+//   - High unique navigation-path ratio (assets excluded)
+//   - Sequential numeric path enumeration
+//   - Missing Referer on HTML navigations
+//   - Metronomic inter-request timing with deliberate pacing (mean gap > 200ms)
+//
+// Each signal fires AT MOST ONCE per window per IP to prevent score
+// runaway from burst browser asset loading.
 type ScraperDetector struct {
 	next   http.Handler
 	cfg    config.ScraperConfig
+	pol    *policy.Engine
 	banMgr *bans.BanManager
 	log    *slog.Logger
 
 	mu    sync.Mutex
-	state map[string]*ipState // ip → state
+	state map[string]*ipState
 }
 
-// NewScraperDetector constructs the middleware. banMgr may be nil.
-func NewScraperDetector(next http.Handler, cfg config.ScraperConfig, banMgr *bans.BanManager, log *slog.Logger) *ScraperDetector {
+func NewScraperDetector(next http.Handler, cfg config.ScraperConfig, pol *policy.Engine, banMgr *bans.BanManager, log *slog.Logger) *ScraperDetector {
 	sd := &ScraperDetector{
 		next:   next,
 		cfg:    cfg,
+		pol:    pol,
 		banMgr: banMgr,
 		log:    log,
 		state:  make(map[string]*ipState),
@@ -77,6 +83,14 @@ func (sd *ScraperDetector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Skip behavioural analysis for known service endpoints.
+	if sd.pol != nil {
+		if action, matched := sd.pol.Match(r); matched && action.SkipChallenge {
+			sd.next.ServeHTTP(w, r)
+			return
+		}
+	}
+
 	ip := extractIP(r)
 	score := sd.analyse(ip, r)
 
@@ -87,30 +101,27 @@ func (sd *ScraperDetector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		sd.log.Warn("scraper: banned",
 			"ip", ip, "score", score,
 			"path", r.URL.Path, "ua", r.Header.Get("User-Agent"))
-		errorpage.Write(w, http.StatusForbidden)
+		errorpage.WriteBlock(w, http.StatusForbidden, ip, "scraper:behavior", sd.log)
 		return
 	}
 
 	if score >= sd.cfg.ChallengeThreshold {
 		sd.log.Info("scraper: challenge threshold reached",
 			"ip", ip, "score", score, "path", r.URL.Path)
-		// Let the request fall through; the upstream challenge gate will
-		// invalidate the token on the next token check if desired.
-		// For now we add a header the challenge dispatcher can act on.
 		r.Header.Set("X-WAF-Scraper-Score", itoa(score))
 	}
 
 	sd.next.ServeHTTP(w, r)
 }
 
-// analyse updates the per-IP state and returns a bot-likelihood score (0–100+).
 func (sd *ScraperDetector) analyse(ip string, r *http.Request) int {
 	sd.mu.Lock()
 	st, ok := sd.state[ip]
 	if !ok {
 		st = &ipState{
-			paths:       make(map[string]struct{}),
+			navPaths:    make(map[string]struct{}),
 			windowStart: time.Now(),
+			signalsFired: make(map[string]bool),
 		}
 		sd.state[ip] = st
 	}
@@ -119,44 +130,55 @@ func (sd *ScraperDetector) analyse(ip string, r *http.Request) int {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 
-	window := sd.cfg.Window.Duration
 	now := time.Now()
+	window := sd.cfg.Window.Duration
 
-	// Roll window.
+	// Roll window — reset all state including which signals have fired.
 	if now.Sub(st.windowStart) > window {
-		st.paths = make(map[string]struct{})
-		st.seqIDs = st.seqIDs[:0]
-		st.timings = st.timings[:0]
-		st.total = 0
-		st.score = 0
-		st.windowStart = now
+		st.navPaths     = make(map[string]struct{})
+		st.navTotal     = 0
+		st.total        = 0
+		st.seqIDs       = st.seqIDs[:0]
+		st.timings      = st.timings[:0]
+		st.score        = 0
+		st.signalsFired = make(map[string]bool)
+		st.windowStart  = now
 	}
 
-	path := r.URL.Path
-	st.paths[path] = struct{}{}
-	st.total++
+	path  := r.URL.Path
+	asset := isAssetPath(path)
 
-	maxTimings := 20
+	st.total++
+	maxTimings := 30
 	st.timings = append(st.timings, now)
 	if len(st.timings) > maxTimings {
 		st.timings = st.timings[len(st.timings)-maxTimings:]
 	}
 
+	if !asset {
+		st.navPaths[path] = struct{}{}
+		st.navTotal++
+	}
+
 	score := 0
 
-	// ── Signal 1: high unique-path ratio ──────────────────────────────────
-	// Only evaluate after enough requests to be statistically meaningful.
-	if st.total >= sd.cfg.MinRequests {
-		ratio := float64(len(st.paths)) / float64(st.total)
+	// ── Signal 1: high unique navigation-path ratio ───────────────────────
+	// Only evaluated once per window once we have enough nav samples.
+	// Fires at most once to avoid repeated increments on each nav request.
+	if !st.signalsFired["ratio"] && st.navTotal >= sd.cfg.MinRequests {
+		ratio := float64(len(st.navPaths)) / float64(st.navTotal)
 		if ratio >= sd.cfg.UniquePathRatioHard {
-			score += 50 // near-certain crawl
+			score += 50
+			st.signalsFired["ratio"] = true
 		} else if ratio >= sd.cfg.UniquePathRatioSoft {
 			score += 25
+			st.signalsFired["ratio"] = true
 		}
 	}
 
 	// ── Signal 2: sequential numeric path enumeration ─────────────────────
-	if reSequential.MatchString(path) {
+	// Fires at most once per window.
+	if !asset && !st.signalsFired["seq"] && reSequential.MatchString(path) {
 		id := extractTrailingInt(path)
 		if id > 0 {
 			st.seqIDs = append(st.seqIDs, id)
@@ -165,32 +187,41 @@ func (sd *ScraperDetector) analyse(ip string, r *http.Request) int {
 			}
 			if isSequentialRun(st.seqIDs, sd.cfg.SeqRunLength) {
 				score += 40
+				st.signalsFired["seq"] = true
 			}
 		}
 	}
 
 	// ── Signal 3: missing Referer on HTML navigations ─────────────────────
-	// Skip assets, API endpoints, and the first request from any IP.
-	accept := r.Header.Get("Accept")
-	referer := r.Header.Get("Referer")
-	isHTML := strings.Contains(accept, "text/html")
-	if isHTML && referer == "" && st.total > 3 && !isAssetPath(path) {
-		score += 15
-	}
-
-	// ── Signal 4: metronomic inter-request timing ─────────────────────────
-	if len(st.timings) >= 10 {
-		if isMetronomic(st.timings, sd.cfg.MetronomeJitterMs) {
-			score += 30
+	// Fires at most once per window.
+	if !asset && !st.signalsFired["referer"] && st.navTotal > 5 {
+		accept  := r.Header.Get("Accept")
+		referer := r.Header.Get("Referer")
+		if strings.Contains(accept, "text/html") && referer == "" {
+			score += 15
+			st.signalsFired["referer"] = true
 		}
 	}
 
-	// Accumulate into persistent IP score.
+	// ── Signal 4: metronomic inter-request timing ─────────────────────────
+	// Fires at most once per window.
+	//
+	// IMPORTANT: requires mean inter-request gap > 200ms.  This prevents
+	// false positives from browser HTTP/2 parallel asset loading, where
+	// 20 images arrive in a ~200ms burst with near-zero variance.
+	// Real bot pacing (sleep intervals) has gaps of 500ms–5s, well above
+	// this threshold.  A browser burst has mean gaps of 0–50ms.
+	if !st.signalsFired["metro"] && len(st.timings) >= 10 {
+		if isMetronomic(st.timings, sd.cfg.MetronomeJitterMs) {
+			score += 30
+			st.signalsFired["metro"] = true
+		}
+	}
+
 	st.score += score
 	return st.score
 }
 
-// cleanup removes stale IP entries every 5 minutes.
 func (sd *ScraperDetector) cleanup() {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
@@ -209,8 +240,6 @@ func (sd *ScraperDetector) cleanup() {
 	}
 }
 
-// ── helpers ──────────────────────────────────────────────────────────────────
-
 var reTrailingInt = regexp.MustCompile(`/(\d+)(?:/[^/]*)?$`)
 
 func extractTrailingInt(path string) int64 {
@@ -225,8 +254,6 @@ func extractTrailingInt(path string) int64 {
 	return n
 }
 
-// isSequentialRun returns true if the last `run` values in ids form a strictly
-// increasing sequence with step ≤ 2 (allows small gaps).
 func isSequentialRun(ids []int64, run int) bool {
 	if len(ids) < run {
 		return false
@@ -241,8 +268,16 @@ func isSequentialRun(ids []int64, run int) bool {
 	return true
 }
 
-// isMetronomic returns true if inter-request gaps have very low variance —
-// characteristic of a bot with a fixed sleep interval.
+// isMetronomic returns true when inter-request gaps are suspiciously uniform
+// AND the mean gap is large enough to indicate deliberate pacing rather than
+// a browser asset burst.
+//
+// Threshold reasoning:
+//   - Browser HTTP/2 parallel requests: mean gap 0–50ms, stddev ~10ms → not metronomic
+//   - Bot sleeping 500ms between requests: mean gap ~500ms, stddev ~20ms → metronomic
+//   - Bot sleeping 1s: mean ~1000ms, stddev ~30ms → metronomic
+//
+// The 200ms minimum mean gap separates these two cases cleanly.
 func isMetronomic(ts []time.Time, maxJitterMs int) bool {
 	if len(ts) < 4 {
 		return false
@@ -254,7 +289,8 @@ func isMetronomic(ts []time.Time, maxJitterMs int) bool {
 		sum += gaps[i-1]
 	}
 	mean := sum / int64(len(gaps))
-	if mean <= 0 {
+	// Require deliberate pacing — reject browser parallel-fetch bursts.
+	if mean < 200 {
 		return false
 	}
 	var variance int64
@@ -263,9 +299,7 @@ func isMetronomic(ts []time.Time, maxJitterMs int) bool {
 		variance += d * d
 	}
 	variance /= int64(len(gaps))
-	// stddev in ms
-	stddev := isqrt(variance)
-	return stddev <= int64(maxJitterMs)
+	return isqrt(variance) <= int64(maxJitterMs)
 }
 
 func isqrt(n int64) int64 {
@@ -283,19 +317,25 @@ func isqrt(n int64) int64 {
 }
 
 var assetExts = []string{
-	".js", ".css", ".png", ".jpg", ".jpeg", ".gif",
-	".svg", ".ico", ".woff", ".woff2", ".ttf", ".webp", ".avif",
+	".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico",
+	".webp", ".avif", ".bmp", ".tiff",
+	".woff", ".woff2", ".ttf", ".otf", ".eot",
+	".js", ".mjs", ".css", ".map",
+	".mp4", ".mp3", ".ogg", ".webm", ".flac", ".wav",
+	".pdf", ".xml",
 }
 
 func isAssetPath(path string) bool {
+	if strings.HasPrefix(path, "/_waf/") {
+		return true
+	}
 	lower := strings.ToLower(path)
 	for _, ext := range assetExts {
 		if strings.HasSuffix(lower, ext) {
 			return true
 		}
 	}
-	return strings.HasPrefix(path, "/_waf/") ||
-		strings.HasPrefix(path, "/api/")
+	return false
 }
 
 func itoa(n int) string {

@@ -81,3 +81,20 @@ func urlPercentEncode(s string) string {
 func sha256Sum(data []byte) [32]byte {
 	return sha256.Sum256(data)
 }
+
+// cleanHost returns the hostname from a request, stripping the port number.
+// Used to populate {{.Host}} in challenge templates so the page header
+// shows the domain the visitor actually navigated to rather than a hardcoded value.
+func cleanHost(r *http.Request) string {
+	host := r.Host
+	if host == "" {
+		return "unknown"
+	}
+	// Strip port: be careful not to strip the port from bare IPv6 addresses ([::1]).
+	if last := strings.LastIndex(host, ":"); last > 0 {
+		if !strings.Contains(host[:last], ":") { // IPv4 or hostname, not IPv6
+			return host[:last]
+		}
+	}
+	return host
+}

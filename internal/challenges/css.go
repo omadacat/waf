@@ -66,6 +66,8 @@ func (h *CSSHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // cssTemplateData is passed to templates/css.html.
 // CSS and HTML fields use typed wrappers so html/template does not escape them.
 type cssTemplateData struct {
+	Host          string
+	BasePath      string
 	DoneURL       string
 	KeyframeCSS   template.CSS
 	HoneypotCSS   template.CSS
@@ -94,29 +96,38 @@ func (h *CSSHandler) servePage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusForbidden)
 
-	data := h.buildTemplateData(sessID, expected, redirect)
+	data := h.buildTemplateData(sessID, expected, redirect, r)
 	if err := mustTemplate("css.html", tmplCSS).Execute(w, data); err != nil {
 		h.log.Error("css: template execute error", "err", err)
 	}
 	h.log.Debug("css: challenge served", "ip", ip)
 }
 
-func (h *CSSHandler) buildTemplateData(sessID string, expected []string, redirect string) cssTemplateData {
+func (h *CSSHandler) buildTemplateData(sessID string, expected []string, redirect string, r *http.Request) cssTemplateData {
 	imgBase := h.basePath + "/css/img/"
 	doneURL := h.basePath + "/css/done?s=" + sessID + "&redirect=" + urlPercentEncode(redirect)
 	hpLetter := honeypotLetters[rand.IntN(len(honeypotLetters))]
 
 	// Build @keyframes CSS for the image sequence.
+	// Percentages are evenly spaced across [0, 100) so each image has the
+	// same time slot in the 4-second loop.  The animation runs on ::before
+	// (content:url() is spec-compliant on pseudo-elements).
 	var kf strings.Builder
+	n := len(expected)
 	kf.WriteString("@keyframes csswaf{\n")
 	for i, img := range expected {
-		pct := i * 100 / len(expected)
+		// Round to nearest integer percent, ensuring we start at 0% and
+		// never reach 100% (that would duplicate the 0% frame on loop).
+		pct := (i * 100 + n/2) / n
+		if i == 0 {
+			pct = 0
+		}
 		kf.WriteString(fmt.Sprintf("  %d%% { content: url('%s%s?s=%s'); }\n", pct, imgBase, img, sessID))
 	}
 	kf.WriteString("}\n")
 
 	// Honeypot CSS element (fetched via background/content property).
-	hpCSS := fmt.Sprintf(".hpot{content:url('%s%s?s=%s&from=css')}", imgBase, hpLetter, sessID)
+	hpCSS := fmt.Sprintf(".hpot::before{content:url('%s%s?s=%s&from=css')}", imgBase, hpLetter, sessID)
 
 	// Hidden honeypot <a> links (display:none via CSS; JS-disabled crawlers may still fetch).
 	var hpLinks strings.Builder
@@ -135,6 +146,8 @@ func (h *CSSHandler) buildTemplateData(sessID string, expected []string, redirec
 	}
 
 	return cssTemplateData{
+		Host:          cleanHost(r),
+		BasePath:      h.basePath,
 		DoneURL:       doneURL,
 		KeyframeCSS:   template.CSS(kf.String()),
 		HoneypotCSS:   template.CSS(hpCSS),
